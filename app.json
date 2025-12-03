@@ -19,7 +19,14 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "package": "com.fabri1820.productionai"
     },
     "web": {
       "output": "static",
@@ -38,11 +45,34 @@
             "backgroundColor": "#000000"
           }
         }
+      ],
+      "expo-sqlite",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone for voice transcription."
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "aaef552d-eaef-447d-819c-ec858e14edd9"
+      },
+      "supabaseUrl": "https://nnttpwhvrtfqdwxvbphq.supabase.co",
+      "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5udHRwd2h2cnRmcWR3eHZicGhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzY1MTk5MDksImV4cCI6MjA1MjA5NTkwOX0.-DNcWotw6q35MLnS2d9O2ut4F7g_n6YlWwJz5sfkP5M",
+      "claudeApiKey": "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",
+      "deepgramApiKey": "af75d29d5b6126c1ab5c95739bd4dd5b164d0488"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/aaef552d-eaef-447d-819c-ec858e14edd9"
     }
   }
 }
