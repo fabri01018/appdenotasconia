@@ -486,144 +486,138 @@ export default function ProjectDetailView({ projectId }) {
   // Align header with the sidebar hamburger button (which is at top: 50 or insets.top + 16)
   const headerTopPadding = Math.max(50, insets.top + 16);
 
-  const renderTask = (task, taskIndex, allTasksInGroup, isStandalone = false) => {
-    const isFirst = taskIndex === 0;
-    const isLast = taskIndex === allTasksInGroup.length - 1;
-    const isOnly = allTasksInGroup.length === 1;
+  const renderTaskRow = (task, index, group, depth = 0, isStandalone = false, parentIsLast = false) => {
+    const isSubtask = depth > 0;
+    const isLast = index === group.length - 1;
     const isSelected = selectedTaskIds.has(task.id);
-    const sectionName = sections.find(s => s.id === task.section_id)?.name || null;
+    const sectionName = !isSubtask && sections ? sections.find(s => s.id === task.section_id)?.name : null;
     const children = subTaskMap[task.id] || [];
     const hasChildren = children.length > 0;
     const isExpanded = !!task.is_expanded;
     const completedChildren = children.filter(c => c.completed).length;
     
-    let taskStyle = styles.taskItem;
+    let taskStyle = [styles.taskItem];
+    
     if (isStandalone) {
-      taskStyle = [styles.taskItem, styles.taskItemStandalone];
-    } else if (isOnly) {
-      taskStyle = [styles.taskItem, styles.taskItemOnly];
-    } else if (isFirst) {
-      taskStyle = [styles.taskItem, styles.taskItemFirst];
-    } else if (isLast) {
-      taskStyle = [styles.taskItem, styles.taskItemLast];
+      if (!isSubtask) {
+        taskStyle.push(styles.taskItemStandalone);
+        if (isExpanded && hasChildren) {
+          taskStyle.push({ borderBottomLeftRadius: 0, borderBottomRightRadius: 0, marginBottom: 0 });
+        }
+      } else {
+         if (isLast) {
+           taskStyle.push(styles.taskItemLast);
+         } else {
+           taskStyle.push(styles.taskItemMiddle);
+         }
+      }
     } else {
-      taskStyle = [styles.taskItem, styles.taskItemMiddle];
+      const effectiveLast = isSubtask 
+        ? (isLast && parentIsLast) 
+        : (isLast && (!isExpanded || !hasChildren));
+        
+      if (effectiveLast) {
+        taskStyle.push(styles.taskItemLast);
+      } else {
+        taskStyle.push(styles.taskItemMiddle);
+      }
     }
     
-    const combinedTaskStyle = Array.isArray(taskStyle)
-      ? [...taskStyle, isSelected && styles.taskItemSelected].filter(Boolean)
-      : [taskStyle, isSelected && styles.taskItemSelected].filter(Boolean);
+    const combinedTaskStyle = [...taskStyle, isSelected && styles.taskItemSelected].filter(Boolean);
+    
+    return (
+      <TouchableOpacity 
+        key={task.id}
+        style={[
+          ...combinedTaskStyle,
+          {
+            backgroundColor: isSelected ? selectedTaskBackgroundColor : taskBackgroundColor,
+            borderColor: isSelected ? '#FF6B35' : taskBorderColor,
+            paddingLeft: 16 + (depth * 32),
+          }
+        ]}
+        onPress={() => handleTaskPress(task.id)}
+        onLongPress={() => handleTaskLongPress(task.id)}
+        delayLongPress={LONG_PRESS_DELAY_MS}
+        activeOpacity={0.9}
+      >
+        <TouchableOpacity 
+          onPress={(e) => {
+            e.stopPropagation();
+            handleDeleteTask(task.id);
+          }}
+          style={styles.checkboxContainer}
+        >
+          <Ionicons 
+            name="square-outline" 
+            size={20} 
+            color={colorScheme === 'dark' ? '#888' : '#666'} 
+            style={styles.checkbox}
+          />
+        </TouchableOpacity>
+        <ThemedView style={styles.taskContent}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <ThemedText type="defaultSemiBold" style={styles.taskTitle}>
+                {task.title}
+              </ThemedText>
+              {hasChildren && (
+                  <ThemedText style={{ fontSize: 12, opacity: 0.5, marginRight: 8 }}>
+                      {completedChildren}/{children.length}
+                  </ThemedText>
+              )}
+          </View>
+          {sectionName && (
+            <ThemedText style={[styles.taskDescription, { fontSize: 12, opacity: 0.6, marginBottom: 4 }]}>
+              from {sectionName}
+            </ThemedText>
+          )}
+          <ThemedText style={styles.taskDescription} numberOfLines={2}>
+            {task.description || 'No description'}
+          </ThemedText>
+          {tagsByTaskId[task.id] && tagsByTaskId[task.id].filter(tag => tag.name !== PIN_TAG_NAME).length > 0 && (
+            <View style={styles.tagsContainer}>
+              {tagsByTaskId[task.id].filter(tag => tag.name !== PIN_TAG_NAME).map((tag) => (
+                <View key={tag.id} style={styles.tagItem}>
+                  <ThemedText style={styles.tagText}>{tag.name}</ThemedText>
+                </View>
+              ))}
+            </View>
+          )}
+        </ThemedView>
+
+        {hasChildren && (
+            <TouchableOpacity 
+                style={{ padding: 8, marginRight: -8 }}
+                onPress={(e) => {
+                    e.stopPropagation();
+                    handleToggleExpand(task.id, isExpanded);
+                }}
+            >
+                <Ionicons 
+                    name={isExpanded ? "chevron-down" : "chevron-forward"} 
+                    size={16} 
+                    color={colorScheme === 'dark' ? '#888' : '#666'} 
+                />
+            </TouchableOpacity>
+        )}
+      </TouchableOpacity>
+    );
+  };
+
+  const renderTask = (task, taskIndex, allTasksInGroup, depth = 0, isStandalone = false) => {
+    const isLast = taskIndex === allTasksInGroup.length - 1;
+    const children = subTaskMap[task.id] || [];
+    const isExpanded = !!task.is_expanded;
     
     return (
       <View key={task.id}>
-        <TouchableOpacity 
-          style={[
-            ...combinedTaskStyle,
-            {
-              backgroundColor: isSelected ? selectedTaskBackgroundColor : taskBackgroundColor,
-              borderColor: isSelected ? '#FF6B35' : taskBorderColor
-            }
-          ]}
-          onPress={() => handleTaskPress(task.id)}
-          onLongPress={() => handleTaskLongPress(task.id)}
-          delayLongPress={LONG_PRESS_DELAY_MS}
-          activeOpacity={0.9}
-        >
-          <TouchableOpacity 
-            onPress={(e) => {
-              e.stopPropagation();
-              handleDeleteTask(task.id);
-            }}
-            style={styles.checkboxContainer}
-          >
-            <Ionicons 
-              name="square-outline" 
-              size={20} 
-              color={colorScheme === 'dark' ? '#888' : '#666'} 
-              style={styles.checkbox}
-            />
-          </TouchableOpacity>
-          <ThemedView style={styles.taskContent}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <ThemedText type="defaultSemiBold" style={styles.taskTitle}>
-                  {task.title}
-                </ThemedText>
-                {hasChildren && (
-                    <ThemedText style={{ fontSize: 12, opacity: 0.5, marginRight: 8 }}>
-                        {completedChildren}/{children.length}
-                    </ThemedText>
-                )}
-            </View>
-            {sectionName && (
-              <ThemedText style={[styles.taskDescription, { fontSize: 12, opacity: 0.6, marginBottom: 4 }]}>
-                from {sectionName}
-              </ThemedText>
-            )}
-            <ThemedText style={styles.taskDescription} numberOfLines={2}>
-              {task.description || 'No description'}
-            </ThemedText>
-            {tagsByTaskId[task.id] && tagsByTaskId[task.id].filter(tag => tag.name !== PIN_TAG_NAME).length > 0 && (
-              <View style={styles.tagsContainer}>
-                {tagsByTaskId[task.id].filter(tag => tag.name !== PIN_TAG_NAME).map((tag) => (
-                  <View key={tag.id} style={styles.tagItem}>
-                    <ThemedText style={styles.tagText}>{tag.name}</ThemedText>
-                  </View>
-                ))}
-              </View>
-            )}
-          </ThemedView>
-
-          {hasChildren && (
-              <TouchableOpacity 
-                  style={{ padding: 8, marginRight: -8 }}
-                  onPress={(e) => {
-                      e.stopPropagation();
-                      handleToggleExpand(task.id, isExpanded);
-                  }}
-              >
-                  <Ionicons 
-                      name={isExpanded ? "chevron-down" : "chevron-forward"} 
-                      size={16} 
-                      color={colorScheme === 'dark' ? '#888' : '#666'} 
-                  />
-              </TouchableOpacity>
-          )}
-        </TouchableOpacity>
+        {renderTaskRow(task, taskIndex, allTasksInGroup, depth, isStandalone)}
 
         {isExpanded && children.length > 0 && (
-            <View style={{ marginBottom: isLast ? 0 : 0 }}>
-                {children.map((child, index) => (
-                    <TouchableOpacity
-                        key={child.id}
-                        style={{ 
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            paddingVertical: 8,
-                            paddingHorizontal: 16,
-                            paddingLeft: 48, // Indent
-                            backgroundColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)',
-                            borderBottomWidth: 0, // No separators for subtasks usually
-                        }}
-                        onPress={() => router.push(`/task/${child.id}`)}
-                    >
-                        <TouchableOpacity 
-                            onPress={(e) => {
-                                e.stopPropagation();
-                                handleDeleteTask(child.id);
-                            }}
-                            style={{ padding: 4, marginRight: 4 }}
-                        >
-                            <Ionicons 
-                                name="square-outline" 
-                                size={16} 
-                                color={colorScheme === 'dark' ? '#888' : '#666'} 
-                            />
-                        </TouchableOpacity>
-                        <ThemedText style={{ fontSize: 14, opacity: 0.8, textDecorationLine: child.completed ? 'line-through' : 'none' }}>
-                            {child.title}
-                        </ThemedText>
-                    </TouchableOpacity>
-                ))}
+            <View>
+                {children.map((child, index) => 
+                    renderTask(child, index, children, depth + 1, isStandalone)
+                )}
             </View>
         )}
       </View>

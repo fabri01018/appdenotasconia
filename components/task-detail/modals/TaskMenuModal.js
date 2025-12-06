@@ -21,6 +21,7 @@ export default function TaskMenuModal({
   onConvertToNormalTask,
   onConvertToSubtask,
   isSubtask,
+  onEditAsText,
 }) {
   const colorScheme = useColorScheme();
 
@@ -93,6 +94,25 @@ export default function TaskMenuModal({
                     <ThemedText style={styles.menuOptionText}>Convert to Subtask</ThemedText>
                     <Ionicons 
                       name="git-merge-outline" 
+                      size={20} 
+                      color={colorScheme === 'dark' ? '#888' : '#666'} 
+                    />
+                  </TouchableOpacity>
+                )}
+                {onEditAsText && (
+                  <TouchableOpacity
+                    style={[
+                      styles.menuOption,
+                      {
+                        borderBottomWidth: 1,
+                        borderBottomColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+                      }
+                    ]}
+                    onPress={onEditAsText}
+                  >
+                    <ThemedText style={styles.menuOptionText}>Edit as Text</ThemedText>
+                    <Ionicons 
+                      name="document-text-outline" 
                       size={20} 
                       color={colorScheme === 'dark' ? '#888' : '#666'} 
                     />

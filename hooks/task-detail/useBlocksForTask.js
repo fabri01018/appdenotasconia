@@ -341,6 +341,25 @@ export function useBlocksForTask(taskId, task, setTask) {
     }
   };
 
+  // Update all blocks at once (e.g. from Text Edit Mode)
+  const updateAllBlocks = async (newBlocks) => {
+    setBlocks(newBlocks);
+    setEditingIndex(null);
+    setEditValue("");
+    
+    // Force immediate save
+    isSavingBlocksRef.current = true;
+    const updatedBlocksKey = JSON.stringify(newBlocks);
+    setSavedBlocksKey(updatedBlocksKey);
+    
+    try {
+      await saveBlocks(newBlocks);
+    } catch (error) {
+      console.error('[Blocks] Error saving all blocks:', error);
+      isSavingBlocksRef.current = false;
+    }
+  };
+
   const addBlock = (parentPath = null) => {
     const updatedBlocks = deepCopyBlocks(blocks);
     
@@ -691,6 +710,7 @@ export function useBlocksForTask(taskId, task, setTask) {
     setEditValue,
     handleEdit,
     handleSave,
+    updateAllBlocks,
     addBlock,
     addToggleBlock,
     addCheckBlock,
@@ -710,4 +730,3 @@ export function useBlocksForTask(taskId, task, setTask) {
     getParentArray,
   };
 }
-

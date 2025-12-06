@@ -18,6 +18,7 @@ import TaskBlocksSection from '@/components/task-detail/TaskBlocksSection';
 import TaskHeader from '@/components/task-detail/TaskHeader';
 import TaskLoadingState from '@/components/task-detail/TaskLoadingState';
 import TaskTagsDisplay from '@/components/task-detail/TaskTagsDisplay';
+import TaskTextEditMode from '@/components/task-detail/TaskTextEditMode';
 import TaskTitleSection from '@/components/task-detail/TaskTitleSection';
 import TaskSelectionModal from '@/components/task-selection-modal';
 import { ThemedText } from '@/components/themed-text';
@@ -32,12 +33,14 @@ import { useProjects } from '@/hooks/use-projects';
 import { useSectionsByProject } from '@/hooks/use-sections';
 import { useTags } from '@/hooks/use-tags';
 import { useFloatingNote } from '@/hooks/useFloatingNote';
+import { descriptionToBlocks } from '@/lib/blocks-utils';
 
 export default function TaskDetailScreen() {
   const { taskId } = useLocalSearchParams();
   const router = useRouter();
   const colorScheme = useColorScheme();
   const [viewMode, setViewMode] = useState('note');
+  const [isTextMode, setIsTextMode] = useState(false);
   const [showAddSubtaskModal, setShowAddSubtaskModal] = useState(false);
   const [showParentSelectionModal, setShowParentSelectionModal] = useState(false);
   const [showHierarchyModal, setShowHierarchyModal] = useState(false);
@@ -157,6 +160,25 @@ export default function TaskDetailScreen() {
     router.push(`/task/${newTaskId}`);
   };
 
+  // Text Edit Mode Handlers
+  const handleEditAsText = () => {
+    modals.closeMenuModal();
+    setIsTextMode(true);
+  };
+
+  const handleSaveText = (newText) => {
+    console.log('Saving text:', newText);
+    
+    // Convert the edited text back to blocks
+    const newBlocks = descriptionToBlocks(newText);
+    
+    // Update the blocks state and save to backend
+    blocksApi.updateAllBlocks(newBlocks);
+    
+    // Exit text mode
+    setIsTextMode(false);
+  };
+
   // Check loading/error states
   const loadingState = <TaskLoadingState loading={loading} task={task} />;
   if (loading || !task) {
@@ -216,43 +238,51 @@ export default function TaskDetailScreen() {
       </View>
 
       {viewMode === 'note' ? (
-        <KeyboardAvoidingView 
-          style={[styles.content, { paddingTop: 0 }]}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-        >
-          <TaskTitleSection
-            title={editing.title}
-            onTitleChange={editing.setTitle}
-            saveStatus={editing.titleSaveStatus}
-          />
-
-          <TaskBlocksSection 
-            loading={blocksApi.loading}
+        isTextMode ? (
+          <TaskTextEditMode 
             blocks={blocksApi.blocks}
-            editingIndex={blocksApi.editingIndex}
-            editValue={blocksApi.editValue}
-            saveStatus={blocksApi.saveStatus}
-            onEdit={blocksApi.handleEdit}
-            onSave={blocksApi.handleSave}
-            onAddBlock={blocksApi.addBlock}
-            onAddToggleBlock={blocksApi.addToggleBlock}
-            onAddCheckBlock={blocksApi.addCheckBlock}
-            onDeleteBlock={blocksApi.deleteBlock}
-            onEnterPress={blocksApi.handleEnterPress}
-            onTextChange={blocksApi.handleTextChange}
-            onToggle={blocksApi.handleToggle}
-            onAddChildBlock={blocksApi.addChildBlock}
-            onAddChildToggle={blocksApi.addChildToggle}
-            onBackspaceOnEmpty={blocksApi.handleBackspaceOnEmpty}
-            onCheckToggle={blocksApi.handleCheckToggle}
+            onSave={handleSaveText}
+            onCancel={() => setIsTextMode(false)}
+          />
+        ) : (
+          <KeyboardAvoidingView 
+            style={[styles.content, { paddingTop: 0 }]}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
           >
-            <TaskTagsDisplay 
-              tags={tags} 
-              onRemoveTag={(tagId) => actions.handleRemoveTag(tagId)}
+            <TaskTitleSection
+              title={editing.title}
+              onTitleChange={editing.setTitle}
+              saveStatus={editing.titleSaveStatus}
             />
-          </TaskBlocksSection>
-        </KeyboardAvoidingView>
+
+            <TaskBlocksSection 
+              loading={blocksApi.loading}
+              blocks={blocksApi.blocks}
+              editingIndex={blocksApi.editingIndex}
+              editValue={blocksApi.editValue}
+              saveStatus={blocksApi.saveStatus}
+              onEdit={blocksApi.handleEdit}
+              onSave={blocksApi.handleSave}
+              onAddBlock={blocksApi.addBlock}
+              onAddToggleBlock={blocksApi.addToggleBlock}
+              onAddCheckBlock={blocksApi.addCheckBlock}
+              onDeleteBlock={blocksApi.deleteBlock}
+              onEnterPress={blocksApi.handleEnterPress}
+              onTextChange={blocksApi.handleTextChange}
+              onToggle={blocksApi.handleToggle}
+              onAddChildBlock={blocksApi.addChildBlock}
+              onAddChildToggle={blocksApi.addChildToggle}
+              onBackspaceOnEmpty={blocksApi.handleBackspaceOnEmpty}
+              onCheckToggle={blocksApi.handleCheckToggle}
+            >
+              <TaskTagsDisplay 
+                tags={tags} 
+                onRemoveTag={(tagId) => actions.handleRemoveTag(tagId)}
+              />
+            </TaskBlocksSection>
+          </KeyboardAvoidingView>
+        )
       ) : (
         <View style={{ flex: 1 }}>
           <AIView 
@@ -289,6 +319,7 @@ export default function TaskDetailScreen() {
         onConvertToNormalTask={() => actions.handleConvertToNormalTask(modals.closeMenuModal)}
         onConvertToSubtask={handleConvertToSubtask}
         isSubtask={!!task?.parent_id}
+        onEditAsText={handleEditAsText}
       />
 
       <TaskSelectionModal
@@ -344,8 +375,8 @@ export default function TaskDetailScreen() {
 
       <AIProcessingModal visible={actions.isProcessingAI} />
 
-      {/* Editing Toolbar - Only visible in note mode */}
-      {viewMode === 'note' && (
+      {/* Editing Toolbar - Only visible in note mode and not in text mode */}
+      {viewMode === 'note' && !isTextMode && (
         <EditingToolbar 
           visible={true}
           onAddToggleBlock={() => blocksApi.addToggleBlock(null)}

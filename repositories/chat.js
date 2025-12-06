@@ -78,3 +78,4 @@ export async function deleteChatMessage(id) {
     await db.runAsync('DELETE FROM chat_messages WHERE id = ?', [id]);
 }
 
+
