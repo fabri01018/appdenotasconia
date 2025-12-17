@@ -1,0 +1,32 @@
+{
+  "name": "productionai-cli",
+  "version": "1.0.0",
+  "description": "ProductionAI CLI - Terminal task manager with blocks (outliner paradigm)",
+  "main": "bin/prod.js",
+  "bin": {
+    "prod": "./bin/prod.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "cli",
+    "task-manager",
+    "productivity",
+    "outliner",
+    "blocks"
+  ],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.87.1",
+    "better-sqlite3": "^12.5.0",
+    "chalk": "^4.1.2",
+    "commander": "^14.0.2",
+    "dotenv": "^17.2.3",
+    "inquirer": "^8.2.5"
+  }
+}

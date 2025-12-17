@@ -1,5 +1,6 @@
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDatabase } from '@/hooks/use-database';
+import { useFilters } from '@/hooks/use-filters';
 import { useProjects } from '@/hooks/use-projects';
 import { useProjectOptions } from '@/hooks/useProjectOptions';
 import { SIDEBAR_WIDTH, useSidebarAnimation } from '@/hooks/useSidebarAnimation';
@@ -18,6 +19,7 @@ import {
 } from 'react-native';
 import { PanGestureHandler } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AddFilterModal from './add-filter-modal';
 import AddProjectModal from './add-project-modal';
 import AddTaskButton from './add-task-button';
 import AddTaskModal from './add-task-modal';
@@ -36,6 +38,7 @@ export default function DraggableSidebar({ children }) {
   const insets = useSafeAreaInsets();
   const { isInitialized, isInitializing, error: dbError } = useDatabase();
   const { data: projects, isLoading: projectsLoading } = useProjects();
+  const { data: filters, isLoading: filtersLoading } = useFilters();
   const { isPulling, isPushing, handlePull, handlePush } = useSyncActions();
   
   // Sidebar animation hook
@@ -68,6 +71,7 @@ export default function DraggableSidebar({ children }) {
 
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
+  const [showAddFilterModal, setShowAddFilterModal] = useState(false);
 
   const navigateToScreen = (screen) => {
     router.push(`/${screen}`);
@@ -82,6 +86,11 @@ export default function DraggableSidebar({ children }) {
     } else {
       router.push(`/project/${projectId}`);
     }
+    closeSidebar();
+  };
+
+  const navigateToFilter = (filterId) => {
+    router.push(`/filter/${filterId}`);
     closeSidebar();
   };
 
@@ -197,7 +206,7 @@ export default function DraggableSidebar({ children }) {
               </View>
 
               <View style={styles.sidebarItems}>
-                {/* Database Status */}
+                {/* Projects Section */}
                 {isInitializing ? (
                   <ThemedText style={styles.loadingText}>Initializing database...</ThemedText>
                 ) : dbError ? (
@@ -237,6 +246,28 @@ export default function DraggableSidebar({ children }) {
                 ) : (
                   <ThemedText style={styles.noProjectsText}>No projects yet</ThemedText>
                 )}
+
+                {/* Filters Section */}
+                {!isInitializing && !dbError && filters && filters.length > 0 && (
+                  <>
+                    <View style={styles.filtersDivider} />
+                    <ThemedText style={styles.filtersHeader}>Filters</ThemedText>
+                    {filters.map((filter) => (
+                      <TouchableOpacity 
+                        key={filter.id}
+                        style={styles.filterItem}
+                        onPress={() => navigateToFilter(filter.id)}
+                      >
+                        <Ionicons 
+                          name="filter-outline"
+                          size={20} 
+                          color={colorScheme === 'dark' ? '#bbb' : '#666'} 
+                        />
+                        <ThemedText style={styles.filterItemText}>{filter.name}</ThemedText>
+                      </TouchableOpacity>
+                    ))}
+                  </>
+                )}
               </View>
             </ThemedView>
           </ScrollView>
@@ -261,6 +292,21 @@ export default function DraggableSidebar({ children }) {
                 name="add" 
                 size={24} 
                 color="#007AFF" 
+              />
+            </TouchableOpacity>
+
+            {/* Add Filter Button */}
+            <TouchableOpacity 
+              style={styles.addProjectButton}
+              onPress={() => {
+                setShowAddFilterModal(true);
+                closeSidebar();
+              }}
+            >
+              <Ionicons 
+                name="filter" 
+                size={24} 
+                color="#FF9500" 
               />
             </TouchableOpacity>
 
@@ -307,6 +353,12 @@ export default function DraggableSidebar({ children }) {
       <AddProjectModal
         visible={showAddProjectModal}
         onClose={() => setShowAddProjectModal(false)}
+      />
+
+      {/* Add Filter Modal */}
+      <AddFilterModal
+        visible={showAddFilterModal}
+        onClose={() => setShowAddFilterModal(false)}
       />
 
       {/* Add Task Modal */}
@@ -594,6 +646,37 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: '#999',
+  },
+  filtersDivider: {
+    height: 1,
+    backgroundColor: 'rgba(0,0,0,0.1)',
+    marginVertical: 15,
+  },
+  filtersHeader: {
+    fontSize: 13,
+    fontWeight: '600',
+    opacity: 0.6,
+    marginBottom: 8,
+    marginLeft: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  filterItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    borderRadius: 8,
+    gap: 12,
+    backgroundColor: 'rgba(255,149,0,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,149,0,0.15)',
+    marginBottom: 6,
+  },
+  filterItemText: {
+    fontSize: 16,
+    fontWeight: '500',
+    opacity: 0.9,
   },
   popupOverlay: {
     flex: 1,
