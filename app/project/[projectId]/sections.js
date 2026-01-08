@@ -8,50 +8,33 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDatabase } from '@/hooks/use-database';
+import { useProject } from '@/hooks/use-projects';
 import { useCreateSection, useDeleteSection, useSectionsByProject, useUpdateSection } from '@/hooks/use-sections';
 import { useTasksByProject } from '@/hooks/use-tasks';
-import { getProjectById } from '@/repositories/projects';
 import { assignAllTasksToSection } from '@/repositories/tasks';
 
 export default function SectionsScreen() {
   const { projectId } = useLocalSearchParams();
   const router = useRouter();
   const colorScheme = useColorScheme();
-  const { isInitialized, isInitializing, error: dbError } = useDatabase();
-  const [project, setProject] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { isInitializing, error: dbError } = useDatabase();
   const [sectionName, setSectionName] = useState('');
   const [selectedSection, setSelectedSection] = useState(null);
   const [showSectionMenu, setShowSectionMenu] = useState(false);
   const [editingSection, setEditingSection] = useState(null);
   const [editSectionName, setEditSectionName] = useState('');
   
-  const { data: sections, isLoading: sectionsLoading } = useSectionsByProject(parseInt(projectId));
-  const { data: tasks } = useTasksByProject(parseInt(projectId));
+  const rawProjectId = Array.isArray(projectId) ? projectId[0] : projectId;
+  const numericProjectId = rawProjectId ? parseInt(rawProjectId, 10) : NaN;
+  const hasValidProjectId = Number.isFinite(numericProjectId);
+
+  const { data: project, isLoading: projectLoading } = useProject(hasValidProjectId ? numericProjectId : null);
+  const { data: sections, isLoading: sectionsLoading } = useSectionsByProject(numericProjectId);
+  const { data: tasks } = useTasksByProject(numericProjectId);
   const createSectionMutation = useCreateSection();
   const updateSectionMutation = useUpdateSection();
   const deleteSectionMutation = useDeleteSection();
   const queryClient = useQueryClient();
-
-  useEffect(() => {
-    const loadProjectData = async () => {
-      try {
-        setLoading(true);
-        
-        if (isInitialized && projectId) {
-          const projectData = await getProjectById(parseInt(projectId));
-          setProject(projectData);
-        }
-      } catch (err) {
-        console.error('Failed to load project:', err);
-        Alert.alert('Error', 'Failed to load project details');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadProjectData();
-  }, [projectId, isInitialized]);
 
   // Get task count per section
   const getTaskCountForSection = (sectionId) => {
@@ -83,7 +66,7 @@ export default function SectionsScreen() {
       });
       
       // Invalidate queries to refresh UI
-      queryClient.invalidateQueries({ queryKey: ['sections', parseInt(projectId)] });
+      queryClient.invalidateQueries({ queryKey: ['sections', numericProjectId] });
       
       setEditingSection(null);
       setEditSectionName('');
@@ -112,8 +95,8 @@ export default function SectionsScreen() {
           onPress: async () => {
             try {
               await deleteSectionMutation.mutateAsync(section.id);
-              queryClient.invalidateQueries({ queryKey: ['sections', parseInt(projectId)] });
-              queryClient.invalidateQueries({ queryKey: ['tasks', parseInt(projectId)] });
+              queryClient.invalidateQueries({ queryKey: ['sections', numericProjectId] });
+              queryClient.invalidateQueries({ queryKey: ['tasks', numericProjectId] });
               Alert.alert('Success', 'Section deleted successfully!');
             } catch (error) {
               Alert.alert('Error', 'Failed to delete section');
@@ -133,7 +116,7 @@ export default function SectionsScreen() {
 
     try {
       const newSection = await createSectionMutation.mutateAsync({
-        projectId: parseInt(projectId),
+        projectId: numericProjectId,
         name: sectionName.trim(),
       });
       
@@ -146,11 +129,11 @@ export default function SectionsScreen() {
       // If this is the first section for this project, assign all tasks to it
       if (currentSections.length <= 0) {
         try {
-          await assignAllTasksToSection(parseInt(projectId), newSection.id);
+          await assignAllTasksToSection(numericProjectId, newSection.id);
           // Invalidate queries to refresh UI
           queryClient.invalidateQueries({ queryKey: ['tasks'] });
-          queryClient.invalidateQueries({ queryKey: ['tasks', parseInt(projectId)] });
-          queryClient.invalidateQueries({ queryKey: ['sections', parseInt(projectId)] });
+          queryClient.invalidateQueries({ queryKey: ['tasks', numericProjectId] });
+          queryClient.invalidateQueries({ queryKey: ['sections', numericProjectId] });
         } catch (error) {
           console.error('Error assigning tasks to section:', error);
           Alert.alert('Warning', 'Section created but failed to assign existing tasks');
@@ -181,7 +164,15 @@ export default function SectionsScreen() {
     );
   }
 
-  if (loading) {
+  if (!hasValidProjectId) {
+    return (
+      <ThemedView style={styles.errorContainer}>
+        <ThemedText style={styles.errorText}>Invalid project id</ThemedText>
+      </ThemedView>
+    );
+  }
+
+  if (projectLoading && !project) {
     return (
       <ThemedView style={styles.loadingContainer}>
         <ActivityIndicator size="large" />

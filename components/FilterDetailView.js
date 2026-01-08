@@ -35,6 +35,8 @@ export default function FilterDetailView({ filterId }) {
   const taskBackgroundColor = colorScheme === 'dark' ? '#252525' : '#FFFFFF';
   const taskBorderColor = colorScheme === 'dark' ? '#3A3A3A' : '#E5E5E5';
   const selectedTaskBackgroundColor = colorScheme === 'dark' ? '#3A2018' : '#FFF5F0';
+  const hasSubtasksChevronBg = colorScheme === 'dark' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)';
+  const hasSubtasksChevronBorder = colorScheme === 'dark' ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.08)';
 
   const { isInitialized } = useDatabase();
   const [tagsByTaskId, setTagsByTaskId] = useState({});
@@ -337,7 +339,10 @@ export default function FilterDetailView({ filterId }) {
 
         {hasChildren && (
           <TouchableOpacity 
-            style={{ padding: 8, marginRight: -8 }}
+            style={[
+              styles.hasSubtasksChevronButton,
+              { backgroundColor: hasSubtasksChevronBg, borderColor: hasSubtasksChevronBorder },
+            ]}
             onPress={(e) => {
               e.stopPropagation();
               handleToggleExpand(task.id, isExpanded);
@@ -744,6 +749,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     color: '#fff',
+  },
+  hasSubtasksChevronButton: {
+    padding: 8,
+    marginRight: -8,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignSelf: 'flex-start',
   },
   multiSelectBar: {
     position: 'absolute',

@@ -4,7 +4,6 @@ import { useFilters } from '@/hooks/use-filters';
 import { useProjects } from '@/hooks/use-projects';
 import { useProjectOptions } from '@/hooks/useProjectOptions';
 import { SIDEBAR_WIDTH, useSidebarAnimation } from '@/hooks/useSidebarAnimation';
-import { useSyncActions } from '@/hooks/useSyncActions';
 import { Ionicons } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
 import React, { useState } from 'react';
@@ -24,10 +23,7 @@ import AddProjectModal from './add-project-modal';
 import AddTaskButton from './add-task-button';
 import AddTaskModal from './add-task-modal';
 import EditProjectModal from './edit-project-modal';
-import PullButton from './pull-button';
-import PushButton from './push-button';
 import SettingsButton from './settings-button';
-import TagsButton from './tags-button';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
 
@@ -39,7 +35,6 @@ export default function DraggableSidebar({ children }) {
   const { isInitialized, isInitializing, error: dbError } = useDatabase();
   const { data: projects, isLoading: projectsLoading } = useProjects();
   const { data: filters, isLoading: filtersLoading } = useFilters();
-  const { isPulling, isPushing, handlePull, handlePush } = useSyncActions();
   
   // Sidebar animation hook
   const {
@@ -199,12 +194,6 @@ export default function DraggableSidebar({ children }) {
             showsVerticalScrollIndicator={false}
           >
             <ThemedView style={[styles.sidebarContent, { paddingTop: sidebarContentPaddingTop }]}>
-              {/* Push and Pull Buttons */}
-              <View style={styles.syncButtonsContainer}>
-                <PushButton onPress={handlePush} disabled={isPushing} />
-                <PullButton onPress={handlePull} disabled={isPulling} />
-              </View>
-
               <View style={styles.sidebarItems}>
                 {/* Projects Section */}
                 {isInitializing ? (
@@ -336,13 +325,6 @@ export default function DraggableSidebar({ children }) {
             <SettingsButton 
               onPress={() => {
                 navigateToScreen('settings');
-              }}
-            />
-
-            {/* Tags Button */}
-            <TagsButton 
-              onPress={() => {
-                navigateToScreen('tags');
               }}
             />
           </View>
@@ -523,11 +505,6 @@ const styles = StyleSheet.create({
     paddingTop: 100,
     paddingHorizontal: 20,
     paddingBottom: 20,
-  },
-  syncButtonsContainer: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 20,
   },
   sidebarTitle: {
     marginBottom: 30,

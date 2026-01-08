@@ -15,11 +15,10 @@ import { ThemedView } from '@/components/themed-view';
 import { PIN_TAG_NAME } from '@/constants/pin';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDatabase } from '@/hooks/use-database';
-import { useProjects } from '@/hooks/use-projects';
+import { useProject, useProjects } from '@/hooks/use-projects';
 import { useSectionsByProject } from '@/hooks/use-sections';
 import { useTags } from '@/hooks/use-tags';
 import { useDeleteTask, useTasksByProject } from '@/hooks/use-tasks';
-import { getProjectById } from '@/repositories/projects';
 import { addTagToTask, getTagsForTasks, toggleTaskExpansion, updateTask } from '@/repositories/tasks';
 
 const LONG_PRESS_DELAY_MS = 500;
@@ -32,9 +31,9 @@ export default function ProjectDetailView({ projectId }) {
   const taskBackgroundColor = colorScheme === 'dark' ? '#252525' : '#FFFFFF';
   const taskBorderColor = colorScheme === 'dark' ? '#3A3A3A' : '#E5E5E5';
   const selectedTaskBackgroundColor = colorScheme === 'dark' ? '#3A2018' : '#FFF5F0';
+  const hasSubtasksChevronBg = colorScheme === 'dark' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)';
+  const hasSubtasksChevronBorder = colorScheme === 'dark' ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.08)';
   const { isInitialized, isInitializing, error: dbError } = useDatabase();
-  const [project, setProject] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
   const [showMenuModal, setShowMenuModal] = useState(false);
   const [tagsByTaskId, setTagsByTaskId] = useState({});
@@ -49,7 +48,10 @@ export default function ProjectDetailView({ projectId }) {
   
   const queryClient = useQueryClient();
   // Ensure projectId is a number
-  const numericProjectId = parseInt(projectId);
+  const numericProjectId = Number(projectId);
+  const hasValidProjectId = Number.isFinite(numericProjectId);
+
+  const { data: project, isLoading: projectLoading } = useProject(hasValidProjectId ? numericProjectId : null);
   const { data: tasks, isLoading: tasksLoading } = useTasksByProject(numericProjectId);
   const { data: sections, isLoading: sectionsLoading } = useSectionsByProject(numericProjectId);
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
@@ -288,11 +290,6 @@ export default function ProjectDetailView({ projectId }) {
 
   useFocusEffect(
     useCallback(() => {
-      // Refresh tasks when screen comes into focus to pick up any subtask changes
-      if (numericProjectId) {
-        queryClient.invalidateQueries({ queryKey: ['tasks', numericProjectId] });
-      }
-
       const onBackPress = () => {
         if (isMultiSelectMode) {
           exitMultiSelect();
@@ -377,28 +374,6 @@ export default function ProjectDetailView({ projectId }) {
   
   const { pinned, bySection, noSection } = groupedTasks();
 
-  useEffect(() => {
-    const loadProjectData = async () => {
-      try {
-        setLoading(true);
-        
-        // Only load project data when database is initialized
-        if (isInitialized && numericProjectId) {
-          const projectData = await getProjectById(numericProjectId);
-          setProject(projectData);
-        }
-        
-      } catch (err) {
-        console.error('Failed to load project:', err);
-        Alert.alert('Error', 'Failed to load project details');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadProjectData();
-  }, [numericProjectId, isInitialized]);
-
   const handleAddTask = () => {
     setShowAddTaskModal(true);
   };
@@ -461,7 +436,15 @@ export default function ProjectDetailView({ projectId }) {
     );
   }
 
-  if (loading) {
+  if (!hasValidProjectId) {
+    return (
+      <ThemedView style={styles.errorContainer}>
+        <ThemedText style={styles.errorText}>Invalid project id</ThemedText>
+      </ThemedView>
+    );
+  }
+
+  if (projectLoading && !project) {
     return (
       <ThemedView style={styles.loadingContainer}>
         <ActivityIndicator size="large" />
@@ -587,7 +570,10 @@ export default function ProjectDetailView({ projectId }) {
 
         {hasChildren && (
             <TouchableOpacity 
-                style={{ padding: 8, marginRight: -8 }}
+                style={[
+                  styles.hasSubtasksChevronButton,
+                  { backgroundColor: hasSubtasksChevronBg, borderColor: hasSubtasksChevronBorder },
+                ]}
                 onPress={(e) => {
                     e.stopPropagation();
                     handleToggleExpand(task.id, isExpanded);
@@ -1151,6 +1137,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     color: '#fff',
+  },
+  hasSubtasksChevronButton: {
+    padding: 8,
+    marginRight: -8,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignSelf: 'flex-start', // keep it in the top-right corner of the row
   },
   multiSelectBar: {
     position: 'absolute',

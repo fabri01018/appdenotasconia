@@ -522,6 +522,62 @@ export function useBlocks(projectName, taskName) {
       return;
     }
 
+    // Check if text starts with header prefix (# , ## , ### )
+    // Only convert regular blocks to headers
+    const headerMatch = text.match(/^(#{1,3})\s+(.*)$/);
+    if (headerMatch && isCurrentlyBlock) {
+      const headerLevel = headerMatch[1].length;
+      const headerContent = headerMatch[2] || '';
+      
+      // Create header block
+      const updatedBlocks = deepCopyBlocks(blocks);
+      const block = findBlockByPath(updatedBlocks, pathArray);
+      const parentArray = getParentArray(updatedBlocks, pathArray);
+      
+      if (block && parentArray) {
+        const index = pathArray[pathArray.length - 1];
+        parentArray[index] = {
+          type: 'header',
+          content: headerContent, // Content without prefix
+          level: headerLevel
+        };
+        setBlocks(updatedBlocks);
+        
+        // Update edit value to show content (without prefix)
+        setEditValue(headerContent);
+        prevEditValueRef.current = headerContent;
+        setIsEmptyState(false);
+      }
+      return;
+    }
+
+    // Check if text starts with bullet prefix "- " (but not a check block)
+    // Only convert regular blocks to bullets
+    const bulletMatch = text.match(/^-\s+(.*)$/);
+    if (bulletMatch && isCurrentlyBlock && !checkMatch) {
+      const bulletContent = bulletMatch[1] || '';
+      
+      // Create bullet block
+      const updatedBlocks = deepCopyBlocks(blocks);
+      const block = findBlockByPath(updatedBlocks, pathArray);
+      const parentArray = getParentArray(updatedBlocks, pathArray);
+      
+      if (block && parentArray) {
+        const index = pathArray[pathArray.length - 1];
+        parentArray[index] = {
+          type: 'bullet',
+          content: bulletContent // Content without prefix
+        };
+        setBlocks(updatedBlocks);
+        
+        // Update edit value to show content (without prefix)
+        setEditValue(bulletContent);
+        prevEditValueRef.current = bulletContent;
+        setIsEmptyState(false);
+      }
+      return;
+    }
+
     // Normal text change - no conversion needed
     setEditValue(text);
     

@@ -50,13 +50,18 @@ export default function BlockItem({
   const [isHovered, setIsHovered] = useState(false);
   const inputRefInternal = useRef(null);
 
-  if (block.type !== "block" && block.type !== "toggle" && block.type !== "check") return null;
+  // Valid block types
+  const VALID_BLOCK_TYPES = ['block', 'toggle', 'check', 'header', 'bullet'];
+  if (!VALID_BLOCK_TYPES.includes(block.type)) return null;
   
   const isToggle = block.type === "toggle";
   const isCheck = block.type === "check";
+  const isHeader = block.type === "header";
+  const isBullet = block.type === "bullet";
   const isOpen = block.isOpen || false;
   const isChecked = isCheck && (block.checked || false);
-  const children = (block.children || []).filter(child => child && (child.type === 'block' || child.type === 'toggle' || child.type === 'check'));
+  const headerLevel = isHeader ? (block.level || 1) : 0;
+  const children = (block.children || []).filter(child => child && VALID_BLOCK_TYPES.includes(child.type));
   const pathArray = Array.isArray(path) ? path : [path];
 
   // Check if this block is currently being edited
@@ -123,6 +128,13 @@ export default function BlockItem({
               color={iconColor}
             />
           </TouchableOpacity>
+        )}
+        {isBullet && !isCurrentlyEditing && (
+          <View style={styles.bulletIcon}>
+            <ThemedText style={[styles.bulletDot, { color: iconColor }]}>
+              •
+            </ThemedText>
+          </View>
         )}
         <Pressable
           style={styles.blockLine}
@@ -203,7 +215,11 @@ export default function BlockItem({
             <ThemedText 
               style={[
                 styles.blockContent,
-                isCheck && isChecked && styles.checkedText
+                isCheck && isChecked && styles.checkedText,
+                isHeader && headerLevel === 1 && styles.header1,
+                isHeader && headerLevel === 2 && styles.header2,
+                isHeader && headerLevel === 3 && styles.header3,
+                isBullet && styles.bulletText,
               ]}
             >
               {block.content || ''}
@@ -338,6 +354,45 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 4,
     marginLeft: 0,
+  },
+  // Header styles
+  header1: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginTop: 16,
+    marginBottom: 8,
+    lineHeight: 32,
+  },
+  header2: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginTop: 12,
+    marginBottom: 6,
+    lineHeight: 28,
+  },
+  header3: {
+    fontSize: 17,
+    fontWeight: '600',
+    marginTop: 8,
+    marginBottom: 4,
+    lineHeight: 24,
+  },
+  // Bullet styles
+  bulletIcon: {
+    padding: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: -4,
+    marginTop: 2,
+    width: 24,
+  },
+  bulletDot: {
+    fontSize: 16,
+    lineHeight: 20,
+  },
+  bulletText: {
+    fontSize: 16,
+    lineHeight: 24,
   },
 });
 

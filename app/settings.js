@@ -1,16 +1,19 @@
+import PullButton from '@/components/pull-button';
+import PushButton from '@/components/push-button';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useProjects, useUpdateProject } from '@/hooks/use-projects';
 import { useSections } from '@/hooks/use-sections';
 import { useSetting } from '@/hooks/use-settings';
+import { useSyncActions } from '@/hooks/useSyncActions';
 import { useTags } from '@/hooks/use-tags';
 import { resetDatabase } from '@/lib/database';
 import { Ionicons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 export default function SettingsScreen() {
   const colorScheme = useColorScheme();
@@ -24,6 +27,7 @@ export default function SettingsScreen() {
   
   const { value: defaultTagId, setValue: setDefaultTagId } = useSetting('default_tag_id');
   const { value: defaultProjectId, setValue: setDefaultProjectId } = useSetting('default_project_id');
+  const { isPulling, isPushing, handlePull, handlePush } = useSyncActions();
   
   const [showTagSelector, setShowTagSelector] = useState(false);
   const [showProjectSelector, setShowProjectSelector] = useState(false);
@@ -75,6 +79,15 @@ export default function SettingsScreen() {
       <ScrollView style={styles.content}>
         <ThemedText style={styles.header}>Settings</ThemedText>
         
+        {/* Sync Buttons */}
+        <ThemedView style={styles.section}>
+          <ThemedText style={styles.sectionHeader}>Sync</ThemedText>
+          <View style={styles.syncButtonsContainer}>
+            <PushButton onPress={handlePush} disabled={isPushing} />
+            <PullButton onPress={handlePull} disabled={isPulling} />
+          </View>
+        </ThemedView>
+        
         {/* Test Button */}
         <TouchableOpacity 
           style={[
@@ -118,6 +131,52 @@ export default function SettingsScreen() {
           <ThemedView style={styles.settingContent}>
             <ThemedText style={[styles.buttonTitle, { color: '#007AFF' }]}>Blocks</ThemedText>
             <ThemedText style={styles.settingDescription}>Open Blocks Screen</ThemedText>
+          </ThemedView>
+        </TouchableOpacity>
+        
+        {/* Tags Button */}
+        <TouchableOpacity 
+          style={[
+            styles.button,
+            { 
+              backgroundColor: colorScheme === 'dark' ? 'rgba(76, 217, 100, 0.2)' : 'rgba(76, 217, 100, 0.1)',
+              borderColor: colorScheme === 'dark' ? 'rgba(76, 217, 100, 0.4)' : 'rgba(76, 217, 100, 0.3)'
+            }
+          ]}
+          onPress={() => router.push('/tags')}
+          activeOpacity={0.7}
+        >
+          <Ionicons 
+            name="pricetags-outline" 
+            size={24} 
+            color="#4CD964" 
+          />
+          <ThemedView style={styles.settingContent}>
+            <ThemedText style={[styles.buttonTitle, { color: '#4CD964' }]}>Tags</ThemedText>
+            <ThemedText style={styles.settingDescription}>Manage your tags</ThemedText>
+          </ThemedView>
+        </TouchableOpacity>
+
+        {/* Snippets Button */}
+        <TouchableOpacity 
+          style={[
+            styles.button,
+            { 
+              backgroundColor: colorScheme === 'dark' ? 'rgba(175, 82, 222, 0.2)' : 'rgba(175, 82, 222, 0.12)',
+              borderColor: colorScheme === 'dark' ? 'rgba(175, 82, 222, 0.4)' : 'rgba(175, 82, 222, 0.3)'
+            }
+          ]}
+          onPress={() => router.push('/snippets')}
+          activeOpacity={0.7}
+        >
+          <Ionicons 
+            name="code-slash-outline" 
+            size={24} 
+            color="#AF52DE" 
+          />
+          <ThemedView style={styles.settingContent}>
+            <ThemedText style={[styles.buttonTitle, { color: '#AF52DE' }]}>Snippets</ThemedText>
+            <ThemedText style={styles.settingDescription}>Manage slash-command snippets</ThemedText>
           </ThemedView>
         </TouchableOpacity>
         
@@ -507,6 +566,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 12,
     opacity: 0.8,
+  },
+  syncButtonsContainer: {
+    flexDirection: 'row',
+    gap: 10,
   },
   selectorButton: {
     flexDirection: 'row',

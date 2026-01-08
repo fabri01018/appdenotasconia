@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createProject, deleteProject, getAllProjects, updateProject } from '../repositories/projects.js';
+import { createProject, deleteProject, getAllProjects, getProjectById, updateProject } from '../repositories/projects.js';
 import { useDatabase } from './use-database';
 
 export function useProjects() {
@@ -10,6 +10,31 @@ export function useProjects() {
     queryFn: getAllProjects,
     staleTime: 5 * 60 * 1000, // 5 minutes
     enabled: isInitialized, // Only run when database is initialized
+  });
+}
+
+/**
+ * Get a single project by id.
+ *
+ * Uses cached `['projects']` list as initial data to avoid extra loading
+ * when navigating between projects.
+ */
+export function useProject(projectId?: number | null) {
+  const { isInitialized } = useDatabase();
+  const queryClient = useQueryClient();
+
+  const enabled = isInitialized && typeof projectId === 'number' && !Number.isNaN(projectId);
+
+  return useQuery({
+    queryKey: ['projects', projectId],
+    queryFn: () => getProjectById(projectId as number),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    enabled,
+    initialData: () => {
+      if (!enabled) return undefined;
+      const projects = queryClient.getQueryData<any[]>(['projects']);
+      return Array.isArray(projects) ? projects.find((p) => p?.id === projectId) : undefined;
+    },
   });
 }
 

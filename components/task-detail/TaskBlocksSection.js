@@ -34,8 +34,14 @@ export default function TaskBlocksSection({
   const insets = useSafeAreaInsets();
   const inputRefs = useRef({});
   const scrollViewRef = useRef(null);
+  const scrollY = useRef(0); // Track current scroll position
   const TOOLBAR_HEIGHT = 32; // Height of the editing toolbar
   const KEYBOARD_OFFSET = 20; // Extra offset to ensure input is visible above keyboard
+
+  // Track scroll position for better scroll-into-view calculations
+  const handleScroll = (event) => {
+    scrollY.current = event.nativeEvent.contentOffset.y;
+  };
 
   // Handle keyboard events
   const handleKeyPress = (e, path) => {
@@ -60,44 +66,55 @@ export default function TaskBlocksSection({
     return pathArray.join('-');
   };
 
-  // Handle input focus - scroll the input into view when keyboard appears
+  // Handle input focus - scroll the input into view intelligently
   const handleInputFocus = (path, inputRef) => {
     if (!scrollViewRef.current || !inputRef) {
       return;
     }
 
-    // Use setTimeout to ensure the keyboard animation has started
+    // Use a slight delay to allow the keyboard to start appearing
+    // iOS keyboard animates faster than Android
+    const delay = Platform.OS === 'ios' ? 100 : 350;
+
     setTimeout(() => {
       if (!scrollViewRef.current || !inputRef) {
         return;
       }
 
       // Use measure to get page coordinates and calculate relative position
-      // This is more reliable than measureLayout across different React Native versions
       if (inputRef.measure) {
         inputRef.measure((x, y, width, height, pageX, pageY) => {
           if (!scrollViewRef.current) return;
           
-          // Measure the ScrollView to get its position
+          // Measure the ScrollView to get its position and visible height
           scrollViewRef.current.measure((sx, sy, swidth, sheight, spageX, spageY) => {
             if (!scrollViewRef.current) return;
             
-            // Calculate relative Y position within the ScrollView
+            // Calculate relative Y position within the ScrollView's viewport
             const relativeY = pageY - spageY;
             
-            // Calculate scroll offset to show the input above keyboard
-            // Account for toolbar and safe area
-            const scrollOffset = relativeY - KEYBOARD_OFFSET;
+            // 1. SMART CHECK: If the line is already in a good spot (top 15% to 40% of viewport),
+            // don't move it. This prevents disorienting jumps when clicking already-visible lines.
+            if (relativeY > 80 && relativeY < sheight * 0.4) {
+              return;
+            }
             
-            // Scroll to show the input with some padding
+            // 2. ERGONOMIC TARGET: Position the input about 20% down the visible area
+            // This leaves room for context above and ensures it's well above the keyboard.
+            const targetY = sheight * 0.20;
+            
+            // 3. ABSOLUTE CALCULATION: Combine current scroll + relative offset - target offset
+            const targetScroll = scrollY.current + relativeY - targetY;
+            
+            // Scroll to the calculated position
             scrollViewRef.current.scrollTo({
-              y: Math.max(0, scrollOffset),
+              y: Math.max(0, targetScroll),
               animated: true,
             });
           });
         });
       }
-    }, Platform.OS === 'ios' ? 100 : 300); // iOS keyboard animates faster
+    }, delay);
   };
 
   // Loading state
@@ -122,6 +139,8 @@ export default function TaskBlocksSection({
         keyboardShouldPersistTaps="handled"
         nestedScrollEnabled={true}
         contentContainerStyle={{ paddingBottom: bottomPadding }}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
       >
         <View style={{ paddingVertical: 8 }}>
           {headerComponent}

@@ -13,7 +13,7 @@
 **Restore automatic synchronization**
 
 ### What it does
-- Auto-pull on app launch
+- Auto-pull on app launch        
 - Auto-push after local changes (debounced)
 - Configurable intervals
 - Smart triggers (on network reconnect, after idle time)
