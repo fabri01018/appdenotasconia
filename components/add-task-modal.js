@@ -10,12 +10,15 @@ import {
   View,
 } from 'react-native';
 
+import SnippetPickerModal from '@/components/snippets/SnippetPickerModal';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useProjects } from '@/hooks/use-projects';
 import { useSectionsByProject } from '@/hooks/use-sections';
 import { useSetting } from '@/hooks/use-settings';
 import { useTags } from '@/hooks/use-tags';
 import { useCreateTask } from '@/hooks/use-tasks';
+import { useSnippets } from '@/hooks/useSnippets';
+import { getActiveSlashToken, replaceRangeWithSnippet } from '@/lib/snippets-utils';
 import { addTagToTask } from '@/repositories/tasks';
 import TemplateSelectionModal from './template-selection-modal';
 import { ThemedText } from './themed-text';
@@ -25,6 +28,10 @@ export default function AddTaskModal({ visible, onClose, projectId, projectName,
   const colorScheme = useColorScheme();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [descriptionSelection, setDescriptionSelection] = useState({ start: 0, end: 0 });
+  const [activeSlash, setActiveSlash] = useState(null);
+  const [showSnippetPicker, setShowSnippetPicker] = useState(false);
+  const [dismissedTokenStart, setDismissedTokenStart] = useState(null);
   const [showTags, setShowTags] = useState(false);
   const [selectedTags, setSelectedTags] = useState([]);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
@@ -38,6 +45,7 @@ export default function AddTaskModal({ visible, onClose, projectId, projectName,
   const { value: defaultTagId } = useSetting('default_tag_id');
   const { value: defaultProjectId } = useSetting('default_project_id');
   const { value: defaultSectionId } = useSetting('default_section_id');
+  const { snippets } = useSnippets();
   
   // Fetch sections for currently selected project
   const { data: projectSections = [] } = useSectionsByProject(selectedProjectId);
@@ -91,6 +99,23 @@ export default function AddTaskModal({ visible, onClose, projectId, projectName,
     }
   }, [projectSections, selectedSectionId, selectedProjectId]);
 
+  // Detect active "/query" near cursor in description and toggle picker
+  useEffect(() => {
+    const cursor = descriptionSelection?.start ?? 0;
+    const token = getActiveSlashToken(description, cursor);
+    setActiveSlash(token);
+    if (!token) {
+      setShowSnippetPicker(false);
+      setDismissedTokenStart(null);
+      return;
+    }
+    if (dismissedTokenStart !== null && token.start === dismissedTokenStart) {
+      setShowSnippetPicker(false);
+      return;
+    }
+    setShowSnippetPicker(true);
+  }, [description, descriptionSelection, dismissedTokenStart]);
+
   useEffect(() => {
     if (visible && defaultTagId && selectedTags.length === 0) {
       const tagId = parseInt(defaultTagId);
@@ -140,6 +165,10 @@ export default function AddTaskModal({ visible, onClose, projectId, projectName,
       // Reset form
       setTitle('');
       setDescription('');
+      setDescriptionSelection({ start: 0, end: 0 });
+      setShowSnippetPicker(false);
+      setActiveSlash(null);
+      setDismissedTokenStart(null);
       setSelectedTags([]);
       setShowTags(false);
       setShowProjects(false);
@@ -156,6 +185,10 @@ export default function AddTaskModal({ visible, onClose, projectId, projectName,
   const handleClose = () => {
     setTitle('');
     setDescription('');
+    setDescriptionSelection({ start: 0, end: 0 });
+    setShowSnippetPicker(false);
+    setActiveSlash(null);
+    setDismissedTokenStart(null);
     setSelectedTags([]);
     setShowTags(false);
     setShowProjects(false);
@@ -210,9 +243,24 @@ export default function AddTaskModal({ visible, onClose, projectId, projectName,
     
     // Pre-fill form with template data
     setTitle(template.title || '');
-    setDescription(template.description || '');
+    const desc = template.description || '';
+    setDescription(desc);
+    setDescriptionSelection({ start: desc.length, end: desc.length });
     
     // Note: We don't copy tags from template - user can add their own
+  };
+
+  const handleInsertSnippet = (snippet) => {
+    if (!snippet || !activeSlash) return;
+    const { nextText, nextCursor } = replaceRangeWithSnippet(
+      description,
+      activeSlash.start,
+      activeSlash.end,
+      snippet.content || ''
+    );
+    setDescription(nextText);
+    setDescriptionSelection({ start: nextCursor, end: nextCursor });
+    setShowSnippetPicker(false);
   };
 
   return (
@@ -478,6 +526,8 @@ export default function AddTaskModal({ visible, onClose, projectId, projectName,
               ]}
               value={description}
               onChangeText={setDescription}
+              selection={descriptionSelection}
+              onSelectionChange={(e) => setDescriptionSelection(e.nativeEvent.selection)}
               placeholder="Enter task description (optional)"
               placeholderTextColor={colorScheme === 'dark' ? '#888' : '#999'}
               multiline
@@ -564,6 +614,17 @@ export default function AddTaskModal({ visible, onClose, projectId, projectName,
           visible={showTemplateModal}
           onClose={() => setShowTemplateModal(false)}
           onSelectTemplate={handleSelectTemplate}
+        />
+
+        <SnippetPickerModal
+          visible={showSnippetPicker}
+          query={activeSlash?.query || ''}
+          snippets={snippets}
+          onClose={() => {
+            setDismissedTokenStart(activeSlash?.start ?? null);
+            setShowSnippetPicker(false);
+          }}
+          onSelect={handleInsertSnippet}
         />
       </ThemedView>
     </Modal>

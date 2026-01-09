@@ -35,6 +35,7 @@ export default function RootLayout() {
                     <Stack.Screen name="task/[taskId]" options={{ headerShown: false }} />
                     <Stack.Screen name="settings" options={{ headerShown: false }} />
                     <Stack.Screen name="tags" options={{ headerShown: false }} />
+                    <Stack.Screen name="snippets" options={{ headerShown: false }} />
                     <Stack.Screen name="ai" options={{ headerShown: false }} />
                     <Stack.Screen name="test" options={{ headerShown: false }} />
                     <Stack.Screen name="blocks" options={{ headerShown: false }} />

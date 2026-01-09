@@ -1,22 +1,61 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useSnippets } from '@/hooks/useSnippets';
 import { blocksToDescription } from '@/lib/blocks-utils';
+import { getActiveSlashToken, replaceRangeWithSnippet } from '@/lib/snippets-utils';
 import React, { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import SnippetPickerModal from '@/components/snippets/SnippetPickerModal';
 
 export default function TaskTextEditMode({ blocks, onSave, onCancel }) {
   const colorScheme = useColorScheme();
   const [text, setText] = useState('');
+  const [selection, setSelection] = useState({ start: 0, end: 0 });
+  const [activeSlash, setActiveSlash] = useState(null);
+  const [showSnippetPicker, setShowSnippetPicker] = useState(false);
+  const [dismissedTokenStart, setDismissedTokenStart] = useState(null);
+  const { snippets } = useSnippets();
   
   // Initialize text from blocks
   useEffect(() => {
     const initialText = blocksToDescription(blocks);
     setText(initialText);
   }, [blocks]);
+
+  // Detect active "/query" near cursor and toggle picker
+  useEffect(() => {
+    const cursor = selection?.start ?? 0;
+    const token = getActiveSlashToken(text, cursor);
+    setActiveSlash(token);
+    if (!token) {
+      setShowSnippetPicker(false);
+      setDismissedTokenStart(null);
+      return;
+    }
+    // If user dismissed the picker for this token, don't auto-reopen until token changes.
+    if (dismissedTokenStart !== null && token.start === dismissedTokenStart) {
+      setShowSnippetPicker(false);
+      return;
+    }
+    setShowSnippetPicker(true);
+  }, [text, selection, dismissedTokenStart]);
   
   const handleSave = () => {
     onSave(text);
+  };
+
+  const handleInsertSnippet = (snippet) => {
+    if (!snippet || !activeSlash) return;
+    const { nextText, nextCursor } = replaceRangeWithSnippet(
+      text,
+      activeSlash.start,
+      activeSlash.end,
+      snippet.content || ''
+    );
+    setText(nextText);
+    setSelection({ start: nextCursor, end: nextCursor });
+    setShowSnippetPicker(false);
   };
   
   const textColor = colorScheme === 'dark' ? '#fff' : '#000';
@@ -51,12 +90,25 @@ export default function TaskTextEditMode({ blocks, onSave, onCancel }) {
             textAlignVertical="top"
             value={text}
             onChangeText={setText}
+            selection={selection}
+            onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
             placeholder="Type your task content..."
             placeholderTextColor={placeholderColor}
             autoFocus
           />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <SnippetPickerModal
+        visible={showSnippetPicker}
+        query={activeSlash?.query || ''}
+        snippets={snippets}
+        onClose={() => {
+          setDismissedTokenStart(activeSlash?.start ?? null);
+          setShowSnippetPicker(false);
+        }}
+        onSelect={handleInsertSnippet}
+      />
     </ThemedView>
   );
 }
