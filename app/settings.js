@@ -8,7 +8,7 @@ import { useSections } from '@/hooks/use-sections';
 import { useSetting } from '@/hooks/use-settings';
 import { useSyncActions } from '@/hooks/useSyncActions';
 import { useTags } from '@/hooks/use-tags';
-import { resetDatabase } from '@/lib/database';
+import { dumpDatabaseContents, resetDatabase } from '@/lib/database';
 import { Ionicons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
@@ -479,6 +479,33 @@ export default function SettingsScreen() {
             </ThemedView>
           )}
         </ThemedView>
+
+        {/* Dump Database Button */}
+        <TouchableOpacity 
+          style={[
+            styles.button,
+            { 
+              backgroundColor: colorScheme === 'dark' ? 'rgba(90, 200, 250, 0.2)' : 'rgba(90, 200, 250, 0.1)',
+              borderColor: colorScheme === 'dark' ? 'rgba(90, 200, 250, 0.4)' : 'rgba(90, 200, 250, 0.3)',
+              marginTop: 16
+            }
+          ]}
+          onPress={async () => {
+            const success = await dumpDatabaseContents();
+            if (success) {
+              Alert.alert('Success', 'Database contents dumped to console. Check your terminal.');
+            } else {
+              Alert.alert('Error', 'Failed to dump database contents.');
+            }
+          }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="list-outline" size={24} color="#5AC8FA" />
+          <ThemedView style={styles.settingContent}>
+            <ThemedText style={[styles.buttonTitle, { color: '#5AC8FA' }]}>Dump Database</ThemedText>
+            <ThemedText style={styles.settingDescription}>Print all tables and data to the console</ThemedText>
+          </ThemedView>
+        </TouchableOpacity>
 
         {/* Reset Database Button */}
         <TouchableOpacity 

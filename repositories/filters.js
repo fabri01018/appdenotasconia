@@ -265,7 +265,8 @@ export async function getFilterProjects(filterId) {
 
 /**
  * Get all tasks that match a filter's criteria
- * Uses OR logic: tasks match if they have ANY of the filter's tags OR are in ANY of the filter's projects
+ * Uses AND logic between categories: tasks match if they have ANY of the filter's tags AND are in ANY of the filter's projects
+ * (Inside each category, it still uses OR: e.g. Task matches if Tag1 OR Tag2)
  * Excludes completed tasks
  */
 export async function getTasksByFilter(filterId) {
@@ -316,7 +317,7 @@ export async function getTasksByFilter(filterId) {
       params.push(...projectIds);
     }
     
-    query += conditions.join(' OR ');
+    query += conditions.join(' AND ');
     query += `) ORDER BY t.id DESC`;
     
     const tasks = await db.getAllAsync(query, params);

@@ -274,7 +274,7 @@ export default function AddFilterModal({ visible, onClose, editMode = false, ini
               color={colorScheme === 'dark' ? '#888' : '#666'} 
             />
             <ThemedText style={styles.helpTextContent}>
-              Select at least one tag or project. Tasks matching ANY of the selected criteria will appear in this filter.
+              Select tags and/or projects. Tasks must match at least one selected tag (if any) AND at least one selected project (if any).
             </ThemedText>
           </View>
         </ScrollView>

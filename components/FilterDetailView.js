@@ -441,7 +441,7 @@ export default function FilterDetailView({ filterId }) {
               color={colorScheme === 'dark' ? '#888' : '#666'} 
             />
             <ThemedText style={styles.criteriaHeaderText}>
-              Showing tasks with any of these:
+              Showing tasks matching:
             </ThemedText>
           </View>
           <ScrollView 
@@ -504,7 +504,7 @@ export default function FilterDetailView({ filterId }) {
             <ThemedText style={styles.emptyTitle}>No tasks match this filter</ThemedText>
             <ThemedText style={styles.emptyText}>
               {filter && (filter.tags?.length > 0 || filter.projects?.length > 0)
-                ? 'Create a task with any of these criteria to see it here:'
+                ? 'Create a task matching these criteria to see it here:'
                 : 'This filter has no criteria set. Edit the filter to add tags or projects.'}
             </ThemedText>
             {filter && (filter.tags?.length > 0 || filter.projects?.length > 0) && (

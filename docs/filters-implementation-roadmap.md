@@ -217,7 +217,7 @@ export async function verifyFilterTables() {
 ```
 
 **Implementation notes**:
-- Use the OR logic from design doc
+- Use the AND logic between categories from design doc (OR within categories)
 - Must exclude completed tasks
 - Must handle empty criteria gracefully
 - Must join with projects to get project_name
@@ -240,8 +240,9 @@ export async function verifyFilterTables() {
 **STOP & TEST**:
 - [ ] Filter returns correct tasks
 - [ ] Excludes completed tasks
-- [ ] Handles multiple tags (OR logic)
-- [ ] Handles multiple projects (OR logic)
+- [ ] Handles multiple tags (OR logic within tags)
+- [ ] Handles multiple projects (OR logic within projects)
+- [ ] Handles tags AND projects (AND logic between categories)
 - [ ] Handles mixed tags + projects
 - [ ] Returns empty array gracefully
 
@@ -558,7 +559,7 @@ export default function FilterDetailScreen() {
 - Section at top showing filter criteria
 - Display tags as pills: `[urgent] [work]`
 - Display projects as pills: `[Client A] [Client B]`
-- Small explanatory text: "Showing tasks with any of these tags or in any of these projects"
+- Small explanatory text: "Showing tasks matching these tags AND projects"
 - Make it collapsible (optional, can be Phase 2)
 
 **Success criteria**:
@@ -984,7 +985,7 @@ After completing all stages, verify:
 ### Data Integrity
 - [ ] Filter-tag relationships work
 - [ ] Filter-project relationships work
-- [ ] OR logic implemented correctly
+- [ ] AND logic between categories implemented correctly
 - [ ] Deleting tags/projects doesn't break filters
 - [ ] No orphaned data
 

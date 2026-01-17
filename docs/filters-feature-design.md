@@ -4,17 +4,17 @@
 
 **What**: A dynamic filter system that creates custom task views based on tags and projects.
 
-**How it Works**: Users create named filters by selecting tags and/or projects. The filter then displays all incomplete tasks that match ANY of the selected criteria (OR logic).
+**How it Works**: Users create named filters by selecting tags and/or projects. The filter then displays all incomplete tasks that match the selected criteria (AND logic between tags and projects).
 
 **Key Decisions**:
-- ✅ OR logic for both tags and projects (flexible matching)
+- ✅ AND logic between tags and projects, OR logic within each category (flexible but precise matching)
 - ✅ Filters appear alongside projects in sidebar (subtle icon distinction)
 - ✅ Always hide completed tasks (no toggle)
 - ✅ Full edit/delete capabilities
 - ✅ Syncs across devices via Supabase
 - ✅ MVP scope: Tags + Projects only
 
-**Example**: A filter named "Work Urgent" with tags [urgent, work] and projects [Client A, Client B] shows all incomplete tasks that have the "urgent" tag OR "work" tag OR are in "Client A" OR "Client B".
+**Example**: A filter named "Work Urgent" with tags [urgent, work] and projects [Client A, Client B] shows all incomplete tasks that have (the "urgent" tag OR "work" tag) AND (are in "Client A" OR "Client B").
 
 ---
 
@@ -25,7 +25,8 @@ A dynamic filter system similar to TickTick that allows users to create custom v
 - **Filters as Virtual Projects**: Filters behave like projects in the UI but don't actually contain tasks
 - **Dynamic Content**: Filter views display tasks that match the filter criteria in real-time
 - **Multiple Criteria**: Each filter can combine multiple tags and projects to create powerful task views
-- **OR Logic**: Flexible matching - tasks appear if they match ANY selected tag OR are in ANY selected project
+- **AND Logic**: Precise matching - tasks appear if they match (ANY selected tag) AND (are in ANY selected project)
+- **OR Logic within Categories**: Within tags or projects, it matches any (e.g., Tag A or Tag B)
 
 ## User Flow Example
 
@@ -42,7 +43,7 @@ A dynamic filter system similar to TickTick that allows users to create custom v
 2. **View Filter**:
    - Filter appears in sidebar: 🔎 Urgent Work (8)
    - Click on filter
-   - See all incomplete tasks that have "urgent" OR "work" tag OR are in Client A or Client B
+   - See all incomplete tasks that have ("urgent" OR "work" tag) AND (are in Client A OR Client B)
    - Criteria shown at top: [urgent] [work] [Client A] [Client B]
 
 3. **Use Filter**:
@@ -129,24 +130,24 @@ CREATE TABLE IF NOT EXISTS filter_projects (
 
 ## Filter Logic
 
-### Matching Criteria (OR Logic)
+### Matching Criteria (AND Logic between categories)
 
-**Logic**: Tasks match if they have **ANY** selected tag OR are in **ANY** selected project.
+**Logic**: Tasks match if they have **ANY** selected tag **AND** are in **ANY** selected project.
 
 **Behavior**:
-- More permissive and flexible
-- Casts a wider net to capture relevant tasks
-- Easy to understand: "Show me tasks with these tags or in these projects"
+- More precise and focused
+- Matches common user expectations for "filtering"
+- Easy to understand: "Show me tasks with these tags that are ALSO in these projects"
 
 **Examples**:
 1. Filter with tags [urgent, work]:
-   - Shows tasks with "urgent" OR "work" tag (or both)
+   - Shows tasks with "urgent" OR "work" tag (since no projects selected, project condition is skipped)
 
 2. Filter with projects [Project A, Project B]:
-   - Shows tasks in Project A OR Project B
+   - Shows tasks in Project A OR Project B (since no tags selected, tag condition is skipped)
 
 3. Filter with tags [urgent] + projects [Project A, Project B]:
-   - Shows tasks that have "urgent" tag OR are in Project A OR in Project B
+   - Shows tasks that have "urgent" tag AND (are in Project A OR in Project B)
 
 **Completed Tasks**: Always excluded from filter results (no toggle option).
 
@@ -179,7 +180,7 @@ export async function getTasksByFilter(filterId) {
     const tagIds = filterTags.map(ft => ft.tag_id);
     const projectIds = filterProjects.map(fp => fp.project_id);
     
-    // Build query with OR logic
+    // Build query with AND logic between categories
     let query = `
       SELECT DISTINCT t.*, p.name as project_name 
       FROM tasks t 
@@ -191,7 +192,7 @@ export async function getTasksByFilter(filterId) {
     const conditions = [];
     const params = [];
     
-    // Add tag conditions (OR logic - task has ANY of the tags)
+    // Add tag conditions (OR logic within tags - task has ANY of the tags)
     if (tagIds.length > 0) {
       const tagPlaceholders = tagIds.map(() => '?').join(',');
       conditions.push(`
@@ -203,16 +204,16 @@ export async function getTasksByFilter(filterId) {
       params.push(...tagIds);
     }
     
-    // Add project conditions (OR logic - task in ANY project)
+    // Add project conditions (OR logic within projects - task in ANY project)
     if (projectIds.length > 0) {
       const projectPlaceholders = projectIds.map(() => '?').join(',');
       conditions.push(`t.project_id IN (${projectPlaceholders})`);
       params.push(...projectIds);
     }
     
-    // Combine conditions with OR
+    // Combine conditions with AND
     if (conditions.length > 0) {
-      query += ' AND (' + conditions.join(' OR ') + ')';
+      query += ' AND (' + conditions.join(' AND ') + ')';
     } else {
       // No criteria specified - return empty array
       return [];
@@ -264,7 +265,7 @@ export async function getTasksByFilter(filterId) {
 ├──────────────────────────────────────────┤
 │  Filtering by:                           │
 │  [urgent] [work] [Client A]        ˅     │ ← Criteria pills (collapsible)
-│  Tasks with any of these tags or         │
+│  Tasks with any of these tags AND        │
 │  in any of these projects                │
 ├──────────────────────────────────────────┤
 │  ☐ Fix critical bug                      │ ← Task list
@@ -629,7 +630,7 @@ Create corresponding tables in Supabase:
 ## Design Decisions (Finalized)
 
 ### Core Behavior
-1. ✅ **Filter Logic**: OR logic for both tags and projects (flexible matching)
+1. ✅ **Filter Logic**: AND logic between tags and projects, OR logic within categories
 2. ✅ **Sync**: Filters must be saved to database and sync via Supabase
 3. ✅ **UI Placement**: Filters appear alongside projects with subtle icon distinction
 4. ✅ **Edit/Delete**: Users can fully edit filter criteria, rename, and delete filters
@@ -655,7 +656,7 @@ Create corresponding tables in Supabase:
 - [ ] Filter detail view component (FilterDetailView.js)
 - [ ] Filter route (app/filter/[filterId].js)
 - [ ] Navigation integration (filters alongside projects)
-- [ ] Task filtering logic (OR for both tags and projects)
+- [ ] Task filtering logic (AND between tags and projects)
 - [ ] Filter list/management UI
 - [ ] Empty states and error handling
 
@@ -723,7 +724,7 @@ Sync Layer (Supabase integration)
 **Backend (Repositories & Hooks)**:
 - [ ] Create repositories/filters.js with CRUD operations
 - [ ] Create hooks/use-filters.ts with React Query hooks
-- [ ] Implement getTasksByFilter with OR logic
+- [ ] Implement getTasksByFilter with AND logic between categories
 - [ ] Add filter tag/project relationship methods
 
 **UI Components**:

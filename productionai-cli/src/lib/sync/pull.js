@@ -33,22 +33,29 @@ async function pullProjects() {
 
   if (data && data.length > 0) {
     for (const project of data) {
-      await db.runAsync(
-        `INSERT OR REPLACE INTO projects (id, name, default_section_id, updated_at, sync_status, deleted_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [
-          project.id,
-          project.name,
-          project.default_section_id || null,
-          project.updated_at,
-          'synced',
-          project.deleted_at || null
-        ]
-      );
+      try {
+        await db.runAsync(
+          `INSERT OR REPLACE INTO projects (id, name, default_section_id, updated_at, sync_status, deleted_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            project.id,
+            project.name,
+            project.default_section_id || null,
+            project.updated_at,
+            'synced',
+            project.deleted_at || null
+          ]
+        );
+      } catch (insertError) {
+        console.error(`  ❌ Failed to sync project "${project.name}" (ID: ${project.id}):`, insertError.message);
+      }
     }
   }
 
-  return data?.length || 0;
+  return {
+    count: data?.length || 0,
+    items: data?.map(p => ({ name: p.name, id: p.id, deleted: !!p.deleted_at })) || []
+  };
 }
 
 /**
@@ -66,7 +73,7 @@ async function pullSections() {
 
   if (error) throw error;
 
-  let synced = 0;
+  let syncedItems = [];
   if (data && data.length > 0) {
     for (const section of data) {
       try {
@@ -93,14 +100,17 @@ async function pullSections() {
             section.deleted_at || null
           ]
         );
-        synced++;
+        syncedItems.push({ name: section.name, id: section.id, deleted: !!section.deleted_at });
       } catch (err) {
-        console.log(`  ⚠️  Error syncing section "${section.name}":`, err.message);
+        console.log(`  ❌ Error syncing section "${section.name}" (ID: ${section.id}):`, err.message);
       }
     }
   }
 
-  return synced;
+  return {
+    count: syncedItems.length,
+    items: syncedItems
+  };
 }
 
 /**
@@ -120,22 +130,29 @@ async function pullTags() {
 
   if (data && data.length > 0) {
     for (const tag of data) {
-      await db.runAsync(
-        `INSERT OR REPLACE INTO tags (id, name, created_at, updated_at, sync_status, deleted_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [
-          tag.id,
-          tag.name,
-          tag.created_at || null,
-          tag.updated_at,
-          'synced',
-          tag.deleted_at || null
-        ]
-      );
+      try {
+        await db.runAsync(
+          `INSERT OR REPLACE INTO tags (id, name, created_at, updated_at, sync_status, deleted_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            tag.id,
+            tag.name,
+            tag.created_at || null,
+            tag.updated_at,
+            'synced',
+            tag.deleted_at || null
+          ]
+        );
+      } catch (insertError) {
+        console.error(`  ❌ Failed to sync tag "${tag.name}" (ID: ${tag.id}):`, insertError.message);
+      }
     }
   }
 
-  return data?.length || 0;
+  return {
+    count: data?.length || 0,
+    items: data?.map(t => ({ name: t.name, id: t.id, deleted: !!t.deleted_at })) || []
+  };
 }
 
 /**
@@ -153,7 +170,7 @@ async function pullTasks() {
 
   if (error) throw error;
 
-  let synced = 0;
+  let syncedItems = [];
   if (data && data.length > 0) {
     // Sort by ID to ensure parents are inserted before children
     data.sort((a, b) => a.id - b.id);
@@ -188,14 +205,22 @@ async function pullTasks() {
             task.deleted_at || null
           ]
         );
-        synced++;
+        syncedItems.push({ 
+          name: task.title, 
+          id: task.id, 
+          deleted: !!task.deleted_at,
+          completed: !!task.completed
+        });
       } catch (err) {
-        console.log(`  ⚠️  Error syncing task "${task.title}":`, err.message);
+        console.log(`  ❌ Error syncing task "${task.title}" (ID: ${task.id}):`, err.message);
       }
     }
   }
 
-  return synced;
+  return {
+    count: syncedItems.length,
+    items: syncedItems
+  };
 }
 
 /**
@@ -210,19 +235,41 @@ async function pullTaskTags() {
 
   if (error) throw error;
 
+  let enrichedItems = [];
   if (data && data.length > 0) {
     // Clear and resync all task_tags (simpler for many-to-many)
     await db.runAsync('DELETE FROM task_tags');
     
     for (const relationship of data) {
-      await db.runAsync(
-        `INSERT OR IGNORE INTO task_tags (task_id, tag_id) VALUES (?, ?)`,
-        [relationship.task_id, relationship.tag_id]
-      );
+      try {
+        await db.runAsync(
+          `INSERT OR IGNORE INTO task_tags (task_id, tag_id) VALUES (?, ?)`,
+          [relationship.task_id, relationship.tag_id]
+        );
+        
+        // Look up names for logging
+        try {
+          const task = await db.getFirstAsync('SELECT title FROM tasks WHERE id = ?', [relationship.task_id]);
+          const tag = await db.getFirstAsync('SELECT name FROM tags WHERE id = ?', [relationship.tag_id]);
+          if (task && tag) {
+            enrichedItems.push({ 
+              taskName: task.title, 
+              tagName: tag.name 
+            });
+          }
+        } catch (e) {
+          // Skip enrichment if lookup fails
+        }
+      } catch (err) {
+        console.log(`  ❌ Error syncing task-tag relationship (task_id: ${relationship.task_id}, tag_id: ${relationship.tag_id}):`, err.message);
+      }
     }
   }
 
-  return data?.length || 0;
+  return {
+    count: data?.length || 0,
+    items: enrichedItems
+  };
 }
 
 /**
@@ -236,11 +283,11 @@ async function pullAll() {
   console.log('📥 Pulling changes from Supabase...\n');
 
   const results = {
-    projects: 0,
-    sections: 0,
-    tags: 0,
-    tasks: 0,
-    task_tags: 0
+    projects: { count: 0, items: [] },
+    sections: { count: 0, items: [] },
+    tags: { count: 0, items: [] },
+    tasks: { count: 0, items: [] },
+    task_tags: { count: 0, items: [] }
   };
 
   const db = getDb();
@@ -250,26 +297,16 @@ async function pullAll() {
     await db.execAsync('PRAGMA foreign_keys = OFF');
 
     results.projects = await pullProjects();
-    console.log(`  ✅ Projects: ${results.projects} updated`);
-
     results.sections = await pullSections();
-    console.log(`  ✅ Sections: ${results.sections} updated`);
-
     results.tags = await pullTags();
-    console.log(`  ✅ Tags: ${results.tags} updated`);
-
     results.tasks = await pullTasks();
-    console.log(`  ✅ Tasks: ${results.tasks} updated`);
-
     results.task_tags = await pullTaskTags();
-    console.log(`  ✅ Task-Tags: ${results.task_tags} relationships synced`);
 
     // Re-enable foreign key constraints
     await db.execAsync('PRAGMA foreign_keys = ON');
 
-    const total = Object.values(results).reduce((sum, count) => sum + count, 0);
-    console.log(`\n✅ Pull complete. ${total} records synced.`);
-
+    const total = Object.values(results).reduce((sum, res) => sum + (res.count || 0), 0);
+    
     return { success: true, results, total };
   } catch (error) {
     // Re-enable foreign keys even if there's an error
