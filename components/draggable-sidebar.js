@@ -6,7 +6,7 @@ import { useProjectOptions } from '@/hooks/useProjectOptions';
 import { SIDEBAR_WIDTH, useSidebarAnimation } from '@/hooks/useSidebarAnimation';
 import { Ionicons } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
     Animated,
     Modal,
@@ -43,10 +43,6 @@ export default function DraggableSidebar({ children }) {
     closeSidebar,
     translateX,
     overlayOpacity,
-    hamburgerIconRotation,
-    hamburgerIconOpacity,
-    closeIconRotation,
-    closeIconOpacity,
     onGestureEvent,
     onHandlerStateChange,
     onEdgeSwipeEvent,
@@ -67,6 +63,21 @@ export default function DraggableSidebar({ children }) {
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
   const [showAddFilterModal, setShowAddFilterModal] = useState(false);
+  const [showAddMenu, setShowAddMenu] = useState(false);
+  const addMenuAnim = useRef(new Animated.Value(0)).current;
+
+  const toggleAddMenu = () => {
+    if (showAddMenu) {
+      Animated.timing(addMenuAnim, { toValue: 0, duration: 150, useNativeDriver: true }).start(() => setShowAddMenu(false));
+    } else {
+      setShowAddMenu(true);
+      Animated.timing(addMenuAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+    }
+  };
+
+  const closeAddMenu = () => {
+    Animated.timing(addMenuAnim, { toValue: 0, duration: 150, useNativeDriver: true }).start(() => setShowAddMenu(false));
+  };
 
   const navigateToScreen = (screen) => {
     router.push(`/${screen}`);
@@ -123,37 +134,11 @@ export default function DraggableSidebar({ children }) {
         onPress={() => isOpen ? closeSidebar() : openSidebar()}
         activeOpacity={0.7}
       >
-        <View style={styles.hamburgerInner}>
-          <Animated.View
-            style={[
-              styles.hamburgerLine,
-              {
-                top: 15,
-                transform: [{ rotate: hamburgerIconRotation }],
-                opacity: hamburgerIconOpacity,
-              },
-            ]}
-          />
-          <Animated.View
-            style={[
-              styles.hamburgerLine,
-              {
-                top: 21, // Spacing for the second line if we had 3, but here it's just 2 lines animating?
-                // Actually, usually a hamburger has 3 lines. The current code only has 2 animated views that seem to be doing double duty or just 2 lines.
-                // Let's make it a standard 3-line hamburger that transforms into an X or just stays simple.
-                // For now, respecting existing logic but fixing visibility.
-                // The issue is likely that they are absolutely positioned on top of each other or missing dimensions.
-                
-                // Re-reading: There are 2 Animated.Views. One rotates for hamburger, one for close?
-                // Let's simplify to a standard icon for now if the animation is complex/broken.
-                // But the user asked to "change styling".
-                // I'll replace the custom lines with an Ionicons "menu" icon which is standard and reliable.
-              }
-            ]} 
-          />
-        </View>
-        {/* Replacing custom lines with standard icon for reliability per user request "only see round background" */}
-        <Ionicons name={isOpen ? "close" : "menu"} size={24} color={colorScheme === 'dark' ? '#fff' : '#000'} />
+        <Ionicons
+          name={isOpen ? 'close' : 'menu'}
+          size={24}
+          color={colorScheme === 'dark' ? '#fff' : '#000'}
+        />
       </TouchableOpacity>
       )}
 
@@ -269,35 +254,69 @@ export default function DraggableSidebar({ children }) {
               paddingBottom: actionButtonsPaddingBottom,
             }
           ]}>
-            {/* Add Project Button */}
-            <TouchableOpacity 
-              style={styles.addProjectButton}
-              onPress={() => {
-                setShowAddProjectModal(true);
-                closeSidebar();
-              }}
-            >
-              <Ionicons 
-                name="add" 
-                size={24} 
-                color="#007AFF" 
-              />
-            </TouchableOpacity>
-
-            {/* Add Filter Button */}
-            <TouchableOpacity 
-              style={styles.addProjectButton}
-              onPress={() => {
-                setShowAddFilterModal(true);
-                closeSidebar();
-              }}
-            >
-              <Ionicons 
-                name="filter" 
-                size={24} 
-                color="#FF9500" 
-              />
-            </TouchableOpacity>
+            {/* Add Button (Project + Filter) */}
+            <View style={styles.addMenuWrapper}>
+              {showAddMenu && (
+                <>
+                  <TouchableWithoutFeedback onPress={closeAddMenu}>
+                    <View style={styles.addMenuBackdrop} />
+                  </TouchableWithoutFeedback>
+                  <Animated.View
+                    style={[
+                      styles.addMenuPopup,
+                      {
+                        backgroundColor: colorScheme === 'dark' ? '#2c2c2e' : '#ffffff',
+                        shadowColor: '#000',
+                        opacity: addMenuAnim,
+                        transform: [{
+                          translateY: addMenuAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] })
+                        }],
+                      }
+                    ]}
+                  >
+                    <TouchableOpacity
+                      style={styles.addMenuOption}
+                      onPress={() => {
+                        closeAddMenu();
+                        setShowAddProjectModal(true);
+                        closeSidebar();
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="folder-outline" size={18} color="#007AFF" />
+                      <ThemedText style={[styles.addMenuOptionText, { color: '#007AFF' }]}>Add Project</ThemedText>
+                    </TouchableOpacity>
+                    <View style={[styles.addMenuDivider, { backgroundColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }]} />
+                    <TouchableOpacity
+                      style={styles.addMenuOption}
+                      onPress={() => {
+                        closeAddMenu();
+                        setShowAddFilterModal(true);
+                        closeSidebar();
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="filter-outline" size={18} color="#FF9500" />
+                      <ThemedText style={[styles.addMenuOptionText, { color: '#FF9500' }]}>Add Filter</ThemedText>
+                    </TouchableOpacity>
+                  </Animated.View>
+                </>
+              )}
+              <TouchableOpacity
+                style={[
+                  styles.addProjectButton,
+                  showAddMenu && { backgroundColor: 'rgba(0,122,255,0.2)', borderColor: 'rgba(0,122,255,0.5)' }
+                ]}
+                onPress={toggleAddMenu}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={showAddMenu ? 'close' : 'add'}
+                  size={24}
+                  color="#007AFF"
+                />
+              </TouchableOpacity>
+            </View>
 
             {/* AI Button */}
             <TouchableOpacity 
@@ -458,13 +477,6 @@ const styles = StyleSheet.create({
     // Making it transparent or simple to fit the new header design
     backgroundColor: 'transparent', // Changed from opaque to transparent to blend with header
   },
-  hamburgerLine: {
-    position: 'absolute',
-    width: 20,
-    height: 2,
-    backgroundColor: '#333',
-    borderRadius: 1,
-  },
   overlay: {
     position: 'absolute',
     top: 0,
@@ -609,6 +621,45 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0,122,255,0.3)',
     borderStyle: 'dashed',
+  },
+  addMenuWrapper: {
+    position: 'relative',
+  },
+  addMenuBackdrop: {
+    position: 'absolute',
+    bottom: 54,
+    left: -200,
+    right: -200,
+    top: -1000,
+    zIndex: 10,
+  },
+  addMenuPopup: {
+    position: 'absolute',
+    bottom: 54,
+    left: 0,
+    borderRadius: 10,
+    paddingVertical: 4,
+    minWidth: 150,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 6,
+    zIndex: 20,
+  },
+  addMenuOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    gap: 10,
+  },
+  addMenuOptionText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  addMenuDivider: {
+    height: 1,
+    marginHorizontal: 10,
   },
   verticalDots: {
     flexDirection: 'column',

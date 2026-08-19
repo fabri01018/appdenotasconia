@@ -8,9 +8,11 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import DraggableSidebar from '@/components/draggable-sidebar';
 import FloatingNoteBubble from '@/components/floating-note-bubble/FloatingNoteBubble';
+import ThemeSettingSync from '@/components/ThemeSettingSync';
 import { AutoSyncProvider } from '@/hooks/AutoSyncProvider';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { FloatingNoteProvider } from '@/hooks/useFloatingNote';
+import { AppThemeProvider } from '@/hooks/useTheme';
 
 const queryClient = new QueryClient();
 
@@ -18,36 +20,46 @@ export const unstable_settings = {
   initialRouteName: 'inbox',
 };
 
-export default function RootLayout() {
+function ThemedApp() {
   const colorScheme = useColorScheme();
 
   return (
+    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <FloatingNoteProvider>
+        <DraggableSidebar>
+          <Stack>
+            <Stack.Screen name="inbox" options={{ headerShown: false }} />
+            <Stack.Screen name="project/[projectId]" options={{ headerShown: false }} />
+            <Stack.Screen name="task/[taskId]" options={{ headerShown: false }} />
+            <Stack.Screen name="settings" options={{ headerShown: false }} />
+            <Stack.Screen name="tags" options={{ headerShown: false }} />
+            <Stack.Screen name="snippets" options={{ headerShown: false }} />
+            <Stack.Screen name="ai" options={{ headerShown: false }} />
+            <Stack.Screen name="ai-settings" options={{ headerShown: false }} />
+            <Stack.Screen name="test" options={{ headerShown: false }} />
+            <Stack.Screen name="blocks" options={{ headerShown: false }} />
+            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+          </Stack>
+        </DraggableSidebar>
+        <FloatingNoteBubble />
+        <StatusBar style="auto" />
+      </FloatingNoteProvider>
+    </ThemeProvider>
+  );
+}
+
+export default function RootLayout() {
+  return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <QueryClientProvider client={queryClient}>
-          <AutoSyncProvider>
-            <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-              <FloatingNoteProvider>
-                <DraggableSidebar>
-                  <Stack>
-                    <Stack.Screen name="inbox" options={{ headerShown: false }} />
-                    <Stack.Screen name="project/[projectId]" options={{ headerShown: false }} />
-                    <Stack.Screen name="task/[taskId]" options={{ headerShown: false }} />
-                    <Stack.Screen name="settings" options={{ headerShown: false }} />
-                    <Stack.Screen name="tags" options={{ headerShown: false }} />
-                    <Stack.Screen name="snippets" options={{ headerShown: false }} />
-                    <Stack.Screen name="ai" options={{ headerShown: false }} />
-                    <Stack.Screen name="test" options={{ headerShown: false }} />
-                    <Stack.Screen name="blocks" options={{ headerShown: false }} />
-                    <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-                  </Stack>
-                </DraggableSidebar>
-                <FloatingNoteBubble />
-                <StatusBar style="auto" />
-              </FloatingNoteProvider>
-            </ThemeProvider>
-          </AutoSyncProvider>
-        </QueryClientProvider>
+        <AppThemeProvider>
+          <QueryClientProvider client={queryClient}>
+            <AutoSyncProvider>
+              <ThemeSettingSync />
+              <ThemedApp />
+            </AutoSyncProvider>
+          </QueryClientProvider>
+        </AppThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

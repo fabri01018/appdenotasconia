@@ -1,21 +1,27 @@
+import AIQuestionMessage from '@/components/ai/AIQuestionMessage';
 import ChatHistoryModal from '@/components/chat-history-modal';
+import DevLogModal from '@/components/dev-log-modal';
 import PromptsSelectionModal from '@/components/prompts-selection-modal';
 import TaskSelectionModal from '@/components/task-selection-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import VoiceInputButton from '@/components/VoiceInputButton';
+import { AI_SETTING_KEYS, boolFromSetting } from '@/constants/ai-settings';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useSetting } from '@/hooks/use-settings';
 import { useDeepgramTTS } from '@/hooks/useDeepgramTTS';
 import { sendMessageToClaude } from '@/lib/claude-api';
-import { formatTaskContext } from '@/lib/context-utils';
+import { formatMultipleTasksContext } from '@/lib/context-utils';
 import {
     addChatMessage,
     createChatSession,
     getChatMessages,
-    getLatestSessionForTask
+    getLatestSessionForTask,
+    updateChatSessionContextTasks,
 } from '@/repositories/chat';
 import { getTaskById } from '@/repositories/tasks';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import {
@@ -44,19 +50,76 @@ const AIView = forwardRef(({ taskId, initialTask, initialSystemPrompt, showHeade
   const [isLoading, setIsLoading] = useState(false);
   const [showPromptsModal, setShowPromptsModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showDevModal, setShowDevModal] = useState(false);
+  const [apiCallLog, setApiCallLog] = useState([]);
+  const { value: savedSystemPrompt } = useSetting(AI_SETTING_KEYS.DEFAULT_SYSTEM_PROMPT);
+  const { value: savedVoiceMode } = useSetting(AI_SETTING_KEYS.VOICE_MODE_DEFAULT);
+  const { value: savedToolsDisabled } = useSetting(AI_SETTING_KEYS.TOOLS_DISABLED_DEFAULT);
+
   const [systemMessage, setSystemMessage] = useState(initialSystemPrompt || null);
   const [showContextModal, setShowContextModal] = useState(false);
-  const [selectedContextTask, setSelectedContextTask] = useState(initialTask || null);
+  const [selectedContextTasks, setSelectedContextTasks] = useState(initialTask ? [initialTask] : []);
   const [toolsDisabled, setToolsDisabled] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
   const scrollViewRef = useRef(null);
-  
+  const textInputRef = useRef(null);
+
   // Chat Session State
   const [currentSessionId, setCurrentSessionId] = useState(null);
+
+  // ---------------------------------------------------------------------------
+  // Parses a <question> block out of an AI response string.
+  //
+  // Expected format (no JSON — plain lines):
+  //   <question>
+  //   What is the question?
+  //   Option one
+  //   Option two
+  //   </question>
+  //
+  // First non-empty line = question text; remaining non-empty lines = options.
+  // Returns { cleanText, questionText, options } where cleanText has the block
+  // stripped out, and options is [] when no block was found.
+  // ---------------------------------------------------------------------------
+  const parseQuestionBlock = (text) => {
+    const match = text.match(/<question>([\s\S]*?)<\/question>/i);
+    if (!match) return { cleanText: text, questionText: null, options: [] };
+
+    const lines = match[1]
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0);
+
+    if (lines.length < 2) return { cleanText: text, questionText: null, options: [] };
+
+    const questionText = lines[0];
+    const options = lines.slice(1);
+    const cleanText = text.replace(match[0], '').trim();
+
+    return { cleanText, questionText, options };
+  };
+
+  // Handles tapping a pre-made option in an AI question bubble.
+  const handleOptionSelect = (messageId, option) => {
+    // Mark the question as answered (disables further taps)
+    setMessages(prev =>
+      prev.map(msg => msg.id === messageId ? { ...msg, answered: option } : msg)
+    );
+    // Tiny delay so the state flush above completes before we send
+    setTimeout(() => {
+      handleSendMessageWithText(option);
+    }, 0);
+  };
+
+  // Handles the "Other…" button — pre-focuses the text input
+  const handleOtherOption = () => {
+    textInputRef.current?.focus();
+  };
   
   // TTS hook
   const { speak, isPlaying, isLoading: isTTSLoading, stop, currentText } = useDeepgramTTS();
   const [playingMessageId, setPlayingMessageId] = useState(null);
+  const [copiedMessageId, setCopiedMessageId] = useState(null);
 
   // Load messages for a session
   const loadSession = async (sessionId) => {
@@ -98,12 +161,26 @@ const AIView = forwardRef(({ taskId, initialTask, initialSystemPrompt, showHeade
   const handleSelectSession = (session) => {
       if (session) {
           loadSession(session.id);
-          // Also update context task if this session has one
-          if (session.context_task_id) {
-             getTaskById(session.context_task_id).then(task => {
-                 if (task) setSelectedContextTask(task);
-             });
-          }
+          // Restore context tasks from session
+          const restoreContextTasks = async () => {
+            try {
+              if (session.context_task_ids) {
+                const ids = JSON.parse(session.context_task_ids);
+                if (Array.isArray(ids) && ids.length > 0) {
+                  const tasks = await Promise.all(ids.map(id => getTaskById(id)));
+                  setSelectedContextTasks(tasks.filter(Boolean));
+                  return;
+                }
+              }
+              if (session.context_task_id) {
+                const task = await getTaskById(session.context_task_id);
+                if (task) setSelectedContextTasks([task]);
+              }
+            } catch (e) {
+              console.error('Error restoring context tasks:', e);
+            }
+          };
+          restoreContextTasks();
       } else {
           // New chat
           setMessages([
@@ -113,10 +190,10 @@ const AIView = forwardRef(({ taskId, initialTask, initialSystemPrompt, showHeade
           
           if (taskId) {
               getTaskById(parseInt(taskId)).then(task => {
-                 if (task) setSelectedContextTask(task);
+                 if (task) setSelectedContextTasks([task]);
               });
           } else {
-              setSelectedContextTask(null);
+              setSelectedContextTasks([]);
           }
       }
   };
@@ -127,31 +204,36 @@ const AIView = forwardRef(({ taskId, initialTask, initialSystemPrompt, showHeade
     }
   }));
 
+  // Apply saved AI defaults (and refresh when returning from AI settings)
+  useEffect(() => {
+    if (!initialSystemPrompt) {
+      setSystemMessage(savedSystemPrompt || null);
+    }
+    setVoiceMode(boolFromSetting(savedVoiceMode));
+    setToolsDisabled(boolFromSetting(savedToolsDisabled));
+  }, [savedSystemPrompt, savedVoiceMode, savedToolsDisabled, initialSystemPrompt]);
+
   // Auto-load task context when taskId is provided
   useEffect(() => {
     const loadTaskContextAndSession = async () => {
       if (taskId) {
         try {
             // Load Task Context
-            if (!selectedContextTask) {
+            if (selectedContextTasks.length === 0) {
                 if (initialTask) {
-                    setSelectedContextTask(initialTask);
+                    setSelectedContextTasks([initialTask]);
                 } else {
                     const task = await getTaskById(parseInt(taskId));
                     if (task) {
-                        setSelectedContextTask(task);
+                        setSelectedContextTasks([task]);
                     }
                 }
             }
 
-            // Check for existing session for this task
-            // We only do this if we aren't already in a session (or if we want to switch)
-            // For now, let's say if taskId param is present, we prefer that task's session
             const existingSession = await getLatestSessionForTask(parseInt(taskId));
             if (existingSession) {
                 await loadSession(existingSession.id);
             } else {
-                // Start fresh linked to this task
                 setCurrentSessionId(null);
                 setMessages([
                     { id: Date.now(), text: 'Hello! How can I help you today?', isUser: false },
@@ -239,22 +321,42 @@ const AIView = forwardRef(({ taskId, initialTask, initialSystemPrompt, showHeade
     }
   };
 
+  const handleCopyMessage = async (messageId, messageText) => {
+    await Clipboard.setStringAsync(messageText);
+    setCopiedMessageId(messageId);
+    setTimeout(() => setCopiedMessageId(null), 2000);
+  };
+
+  // Core send logic — accepts an optional explicit text so option-select can
+  // call it without waiting for the inputText state to flush.
+  const handleSendMessageWithText = async (explicitText) => {
+    const trimmedInput = (explicitText ?? inputText).trim();
+    if (!trimmedInput || isLoading) return;
+
+    setInputText('');
+    await _doSend(trimmedInput);
+  };
+
   const handleSendMessage = async () => {
     const trimmedInput = inputText.trim();
     if (!trimmedInput || isLoading) return;
+    setInputText('');
+    await _doSend(trimmedInput);
+  };
+
+  const _doSend = async (trimmedInput) => {
 
     // Initialize session if needed
     let activeSessionId = currentSessionId;
     if (!activeSessionId) {
         try {
-            // Create title from first few words (max 30 chars)
-            const title = trimmedInput.length > 30 
-                ? trimmedInput.substring(0, 30) + '...' 
+            const title = trimmedInput.length > 30
+                ? trimmedInput.substring(0, 30) + '...'
                 : trimmedInput;
-            
+
             activeSessionId = await createChatSession(
-                title, 
-                selectedContextTask ? selectedContextTask.id : null
+                title,
+                selectedContextTasks.map(t => t.id)
             );
             setCurrentSessionId(activeSessionId);
         } catch (error) {
@@ -262,17 +364,20 @@ const AIView = forwardRef(({ taskId, initialTask, initialSystemPrompt, showHeade
             Alert.alert('Error', 'Failed to start chat session');
             return;
         }
+    } else if (selectedContextTasks.length > 0) {
+        // Keep stored context IDs in sync with current selection
+        updateChatSessionContextTasks(activeSessionId, selectedContextTasks.map(t => t.id))
+          .catch(e => console.error('Error updating session context tasks:', e));
     }
 
-    // Format context if a task is selected
+    // Format context if tasks are selected
     let messageWithContext = trimmedInput;
-    if (selectedContextTask) {
+    if (selectedContextTasks.length > 0) {
       try {
-        const contextString = await formatTaskContext(selectedContextTask);
+        const contextString = await formatMultipleTasksContext(selectedContextTasks);
         messageWithContext = `${contextString}\n\n${trimmedInput}`;
       } catch (error) {
         console.error('Error formatting context:', error);
-        // Continue with original message if context formatting fails
         messageWithContext = trimmedInput;
       }
     }
@@ -293,7 +398,6 @@ const AIView = forwardRef(({ taskId, initialTask, initialSystemPrompt, showHeade
     };
 
     setMessages(prev => [...prev, userMessage]);
-    setInputText('');
     setIsLoading(true);
 
     // Create a placeholder for AI response
@@ -338,6 +442,9 @@ const AIView = forwardRef(({ taskId, initialTask, initialSystemPrompt, showHeade
                       : msg
               ));
           }
+        },
+        (callEntry) => {
+          setApiCallLog(prev => [...prev, callEntry]);
         }
       );
 
@@ -346,7 +453,10 @@ const AIView = forwardRef(({ taskId, initialTask, initialSystemPrompt, showHeade
         setMessages(prev => prev.filter(msg => msg.id !== aiMessageId));
         Alert.alert('Error', response.error);
       } else {
-        // Save AI response to DB
+        // Parse any <question> block embedded in the response
+        const { cleanText, questionText, options } = parseQuestionBlock(response.text);
+
+        // Save AI response to DB (store the raw text including any question block)
         let dbAiMessageId;
         try {
              dbAiMessageId = await addChatMessage(activeSessionId, 'assistant', response.text);
@@ -354,10 +464,15 @@ const AIView = forwardRef(({ taskId, initialTask, initialSystemPrompt, showHeade
             console.error('Failed to save AI message', error);
         }
 
-        // Update placeholder with actual response
-        setMessages(prev => prev.map(msg => 
-          msg.id === aiMessageId 
-            ? { ...msg, text: response.text, id: dbAiMessageId || msg.id } // Update ID if saved
+        // Update placeholder with actual response (stripped of question block)
+        setMessages(prev => prev.map(msg =>
+          msg.id === aiMessageId
+            ? {
+                ...msg,
+                text: cleanText,
+                id: dbAiMessageId || msg.id,
+                ...(options.length > 0 ? { questionText, options, answered: null } : {}),
+              }
             : msg
         ));
 
@@ -463,7 +578,6 @@ const AIView = forwardRef(({ taskId, initialTask, initialSystemPrompt, showHeade
       {/* Header */}
       {showHeader && (
         <ThemedView style={styles.header}>
-          <ThemedText type="title" style={styles.headerText}>AI Assistant</ThemedText>
           <View style={styles.headerButtons}>
             <TouchableOpacity 
                 style={styles.headerButton}
@@ -476,6 +590,26 @@ const AIView = forwardRef(({ taskId, initialTask, initialSystemPrompt, showHeade
                 onPress={() => setShowHistoryModal(true)}
             >
                 <Ionicons name="time-outline" size={24} color={colorScheme === 'dark' ? '#ECEDEE' : '#11181C'} />
+            </TouchableOpacity>
+            <TouchableOpacity
+                style={[
+                  styles.headerButton,
+                  apiCallLog.length > 0 && { position: 'relative' }
+                ]}
+                onPress={() => setShowDevModal(true)}
+            >
+                <Ionicons name="bug-outline" size={24} color={colorScheme === 'dark' ? '#60A5FA' : '#2563eb'} />
+                {apiCallLog.length > 0 && (
+                  <View style={[styles.callBadge, { backgroundColor: '#60A5FA' }]}>
+                    <ThemedText style={styles.callBadgeText}>{apiCallLog.length > 99 ? '99+' : String(apiCallLog.length)}</ThemedText>
+                  </View>
+                )}
+            </TouchableOpacity>
+            <TouchableOpacity 
+                style={styles.headerButton}
+                onPress={() => router.push('/ai-settings')}
+            >
+                <Ionicons name="settings-outline" size={24} color={colorScheme === 'dark' ? '#ECEDEE' : '#11181C'} />
             </TouchableOpacity>
           </View>
         </ThemedView>
@@ -497,10 +631,13 @@ const AIView = forwardRef(({ taskId, initialTask, initialSystemPrompt, showHeade
             <View
               key={message.id}
               style={[
-                styles.messageBubble,
-                message.isUser ? styles.userMessage : (message.type === 'tool-usage' ? styles.toolMessage : styles.aiMessage),
+                styles.messageRow,
+                message.isUser
+                  ? { backgroundColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.05)' : '#F7F7F8' }
+                  : (message.type === 'tool-usage' ? styles.toolMessageRow : null),
               ]}
             >
+              <View style={[styles.messageContent, message.type === 'tool-usage' && styles.messageContentCompact]}>
               {message.text === '...' && !message.isUser ? (
                 <View style={styles.loadingContainer}>
                   <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#ECEDEE' : '#11181C'} />
@@ -519,14 +656,34 @@ const AIView = forwardRef(({ taskId, initialTask, initialSystemPrompt, showHeade
               ) : (
                 <>
                   {message.isUser ? (
-                    <ThemedText
-                      style={[
-                        styles.messageText,
-                        styles.userMessageText,
-                      ]}
-                    >
-                      {message.text}
-                    </ThemedText>
+                    <>
+                      <ThemedText
+                        style={[
+                          styles.messageText,
+                          styles.userMessageText,
+                        ]}
+                      >
+                        {message.text}
+                      </ThemedText>
+                      <TouchableOpacity
+                        style={[
+                          styles.copyButton,
+                          {
+                            backgroundColor: copiedMessageId === message.id
+                              ? (colorScheme === 'dark' ? 'rgba(10, 126, 164, 0.3)' : 'rgba(10, 126, 164, 0.2)')
+                              : (colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'),
+                          },
+                        ]}
+                        activeOpacity={0.7}
+                        onPress={() => handleCopyMessage(message.id, message.text)}
+                      >
+                        <Ionicons
+                          name={copiedMessageId === message.id ? 'checkmark' : 'copy-outline'}
+                          size={14}
+                          color={colorScheme === 'dark' ? '#ECEDEE' : '#11181C'}
+                        />
+                      </TouchableOpacity>
+                    </>
                   ) : (
                     <Markdown
                       style={{
@@ -605,42 +762,74 @@ const AIView = forwardRef(({ taskId, initialTask, initialSystemPrompt, showHeade
                       {message.text}
                     </Markdown>
                   )}
+                  {/* Structured question options */}
+                  {!message.isUser && message.options?.length > 0 && (
+                    <AIQuestionMessage
+                      questionText={message.questionText}
+                      options={message.options}
+                      answered={message.answered}
+                      onSelect={(option) => handleOptionSelect(message.id, option)}
+                      onOther={handleOtherOption}
+                    />
+                  )}
+
                   {!message.isUser && message.text !== '...' && (
-                    <TouchableOpacity
-                      style={[
-                        styles.microphoneButton,
-                        {
-                          backgroundColor: playingMessageId === message.id && (isPlaying || isTTSLoading)
-                            ? (colorScheme === 'dark' ? 'rgba(10, 126, 164, 0.3)' : 'rgba(10, 126, 164, 0.2)')
-                            : (colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'),
-                        },
-                      ]}
-                      activeOpacity={0.7}
-                      onPress={() => handleSpeakMessage(message.id, message.text)}
-                      disabled={isTTSLoading && playingMessageId !== message.id}
-                    >
-                      {isTTSLoading && playingMessageId === message.id ? (
-                        <ActivityIndicator 
-                          size="small" 
-                          color={colorScheme === 'dark' ? '#ECEDEE' : '#11181C'} 
+                    <View style={styles.messageActions}>
+                      <TouchableOpacity
+                        style={[
+                          styles.microphoneButton,
+                          {
+                            backgroundColor: playingMessageId === message.id && (isPlaying || isTTSLoading)
+                              ? (colorScheme === 'dark' ? 'rgba(10, 126, 164, 0.3)' : 'rgba(10, 126, 164, 0.2)')
+                              : (colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'),
+                          },
+                        ]}
+                        activeOpacity={0.7}
+                        onPress={() => handleSpeakMessage(message.id, message.text)}
+                        disabled={isTTSLoading && playingMessageId !== message.id}
+                      >
+                        {isTTSLoading && playingMessageId === message.id ? (
+                          <ActivityIndicator
+                            size="small"
+                            color={colorScheme === 'dark' ? '#ECEDEE' : '#11181C'}
+                          />
+                        ) : isPlaying && playingMessageId === message.id ? (
+                          <Ionicons
+                            name="stop-circle"
+                            size={16}
+                            color={colorScheme === 'dark' ? '#ECEDEE' : '#11181C'}
+                          />
+                        ) : (
+                          <Ionicons
+                            name="mic"
+                            size={16}
+                            color={colorScheme === 'dark' ? '#ECEDEE' : '#11181C'}
+                          />
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.copyButton,
+                          {
+                            backgroundColor: copiedMessageId === message.id
+                              ? (colorScheme === 'dark' ? 'rgba(10, 126, 164, 0.3)' : 'rgba(10, 126, 164, 0.2)')
+                              : (colorScheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'),
+                          },
+                        ]}
+                        activeOpacity={0.7}
+                        onPress={() => handleCopyMessage(message.id, message.text)}
+                      >
+                        <Ionicons
+                          name={copiedMessageId === message.id ? 'checkmark' : 'copy-outline'}
+                          size={14}
+                          color={colorScheme === 'dark' ? '#ECEDEE' : '#11181C'}
                         />
-                      ) : isPlaying && playingMessageId === message.id ? (
-                        <Ionicons 
-                          name="stop-circle" 
-                          size={16} 
-                          color={colorScheme === 'dark' ? '#ECEDEE' : '#11181C'} 
-                        />
-                      ) : (
-                        <Ionicons 
-                          name="mic" 
-                          size={16} 
-                          color={colorScheme === 'dark' ? '#ECEDEE' : '#11181C'} 
-                        />
-                      )}
-                    </TouchableOpacity>
+                      </TouchableOpacity>
+                    </View>
                   )}
                 </>
               )}
+              </View>
             </View>
           ))}
         </ScrollView>
@@ -670,37 +859,21 @@ const AIView = forwardRef(({ taskId, initialTask, initialSystemPrompt, showHeade
             style={[
               styles.miniButton,
               {
-                backgroundColor: selectedContextTask 
-                  ? (colorScheme === 'dark' ? '#0a7ea4' : '#0a7ea4') 
+                backgroundColor: selectedContextTasks.length > 0
+                  ? '#0a7ea4'
                   : (colorScheme === 'dark' ? '#3A3A3A' : '#E0E0E0'),
               },
             ]}
             activeOpacity={0.7}
-            onPress={() => {
-              // If context is already selected, clear it on second click
-              if (selectedContextTask) {
-                Alert.alert(
-                  'Clear Context',
-                  'Do you want to clear the selected task context?',
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    { 
-                      text: 'Clear', 
-                      style: 'destructive',
-                      onPress: () => setSelectedContextTask(null)
-                    }
-                  ]
-                );
-              } else {
-                setShowContextModal(true);
-              }
-            }}
+            onPress={() => setShowContextModal(true)}
           >
             <ThemedText style={[
               styles.miniButtonText,
-              selectedContextTask && styles.miniButtonTextActive
+              selectedContextTasks.length > 0 && styles.miniButtonTextActive
             ]}>
-              Context{selectedContextTask ? ' ✓' : ''}
+              {selectedContextTasks.length > 0
+                ? `Context (${selectedContextTasks.length})`
+                : 'Context'}
             </ThemedText>
           </TouchableOpacity>
           <TouchableOpacity
@@ -758,6 +931,7 @@ const AIView = forwardRef(({ taskId, initialTask, initialSystemPrompt, showHeade
           { paddingBottom: Platform.OS === 'ios' ? 28 : Math.max(insets.bottom + 10, 10) }
         ]}>
           <TextInput
+            ref={textInputRef}
             style={[
               styles.textInput,
               {
@@ -816,10 +990,8 @@ const AIView = forwardRef(({ taskId, initialTask, initialSystemPrompt, showHeade
       <TaskSelectionModal
         visible={showContextModal}
         onClose={() => setShowContextModal(false)}
-        onSelectTask={(task) => {
-          setSelectedContextTask(task);
-        }}
-        selectedTask={selectedContextTask}
+        onUpdateTasks={(tasks) => setSelectedContextTasks(tasks)}
+        selectedTasks={selectedContextTasks}
       />
 
       {/* Chat History Modal */}
@@ -828,6 +1000,13 @@ const AIView = forwardRef(({ taskId, initialTask, initialSystemPrompt, showHeade
         onClose={() => setShowHistoryModal(false)}
         onSelectSession={handleSelectSession}
         currentSessionId={currentSessionId}
+      />
+
+      {/* Dev Log Modal */}
+      <DevLogModal
+        visible={showDevModal}
+        onClose={() => setShowDevModal(false)}
+        calls={apiCallLog}
       />
     </ThemedView>
   );
@@ -849,7 +1028,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0,0,0,0.1)',
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     alignItems: 'center',
   },
   headerText: {
@@ -865,19 +1044,37 @@ const styles = StyleSheet.create({
   headerButton: {
     padding: 8,
   },
+  callBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 3,
+  },
+  callBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
   messagesContainer: {
     flex: 1,
   },
   messagesContent: {
-    paddingVertical: 20,
-    paddingHorizontal: 8,
+    paddingVertical: 0,
   },
-  messageBubble: {
-    maxWidth: '95%',
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    borderRadius: 20,
-    marginBottom: 16,
+  messageRow: {
+    width: '100%',
+  },
+  messageContent: {
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+  },
+  messageContentCompact: {
+    paddingVertical: 6,
   },
   toolUsageContainer: {
     flexDirection: 'row',
@@ -891,34 +1088,23 @@ const styles = StyleSheet.create({
     color: '#9BA1A6', // Neutral gray
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
-  userMessage: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#0a7ea4',
-    borderBottomRightRadius: 4,
-  },
-  toolMessage: {
-    alignSelf: 'flex-start',
+  toolMessageRow: {
     backgroundColor: 'transparent',
-    width: '95%',
-    paddingVertical: 4,
-    paddingHorizontal: 18,
-    marginBottom: 4, // Less margin for tool usage to group them visually
-  },
-  aiMessage: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(0,0,0,0.1)',
-    borderBottomLeftRadius: 4,
-    width: '95%',
   },
   messageText: {
     fontSize: 16,
     lineHeight: 24,
   },
-  userMessageText: {
-    color: '#FFFFFF',
-  },
+  userMessageText: {},
   loadingContainer: {
     paddingVertical: 8,
+  },
+  messageActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+    alignSelf: 'flex-start',
   },
   microphoneButton: {
     width: 32,
@@ -926,8 +1112,13 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 10,
-    alignSelf: 'flex-start',
+  },
+  copyButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   inputContainer: {
     flexDirection: 'row',

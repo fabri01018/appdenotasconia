@@ -2,13 +2,29 @@ import { getDb } from '@/lib/database';
 
 // Chat Sessions
 
-export async function createChatSession(title = 'New Chat', contextTaskId = null) {
+export async function createChatSession(title = 'New Chat', contextTaskIds = null) {
   const db = getDb();
+  const ids = Array.isArray(contextTaskIds)
+    ? contextTaskIds
+    : contextTaskIds != null ? [contextTaskIds] : [];
+  const primaryId = ids.length > 0 ? ids[0] : null;
+  const idsJson = ids.length > 0 ? JSON.stringify(ids) : null;
   const result = await db.runAsync(
-    'INSERT INTO chat_sessions (title, context_task_id) VALUES (?, ?)',
-    [title, contextTaskId]
+    'INSERT INTO chat_sessions (title, context_task_id, context_task_ids) VALUES (?, ?, ?)',
+    [title, primaryId, idsJson]
   );
   return result.lastInsertRowId;
+}
+
+export async function updateChatSessionContextTasks(sessionId, contextTaskIds) {
+  const db = getDb();
+  const ids = Array.isArray(contextTaskIds) ? contextTaskIds : [];
+  const primaryId = ids.length > 0 ? ids[0] : null;
+  const idsJson = ids.length > 0 ? JSON.stringify(ids) : null;
+  await db.runAsync(
+    'UPDATE chat_sessions SET context_task_id = ?, context_task_ids = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    [primaryId, idsJson, sessionId]
+  );
 }
 
 export async function getChatSessions() {

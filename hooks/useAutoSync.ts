@@ -3,12 +3,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { pushAllLocalChanges } from '../lib/sync/@sync_fabrizio';
 import { getPendingCounts, hasPendingChanges } from '../lib/sync/pending-check';
+import { useSetting } from './use-settings';
 
 // 4 minutes in milliseconds
 const AUTO_SYNC_INTERVAL = 4 * 60 * 1000;
 
+export const SUPABASE_SYNC_ENABLED_KEY = 'supabase_sync_enabled';
+
 interface AutoSyncState {
-  isEnabled: boolean;
   isSyncing: boolean;
   lastSyncTime: Date | null;
   lastSyncResult: 'success' | 'failure' | 'skipped' | null;
@@ -16,16 +18,19 @@ interface AutoSyncState {
 }
 
 /**
- * Hook that provides automatic periodic sync every 4 minutes
- * Only syncs if there are pending changes (dirty check)
+ * Hook that provides automatic periodic sync every 4 minutes.
+ * Only syncs if there are pending changes (dirty check) and sync is enabled.
  */
 export function useAutoSync() {
   const queryClient = useQueryClient();
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
-  
+
+  // Persisted enabled state — null/undefined defaults to enabled (true)
+  const { value: syncEnabledValue, setValue: setSyncEnabled } = useSetting(SUPABASE_SYNC_ENABLED_KEY);
+  const isEnabled = syncEnabledValue !== 'false';
+
   const [state, setState] = useState<AutoSyncState>({
-    isEnabled: true,
     isSyncing: false,
     lastSyncTime: null,
     lastSyncResult: null,
@@ -42,6 +47,10 @@ export function useAutoSync() {
 
   // Perform the sync
   const performSync = useCallback(async () => {
+    if (!isEnabled) {
+      console.log('[AutoSync] Sync disabled, skipping');
+      return;
+    }
     if (state.isSyncing) {
       console.log('[AutoSync] Sync already in progress, skipping');
       return;
@@ -98,7 +107,7 @@ export function useAutoSync() {
         lastSyncResult: 'failure',
       }));
     }
-  }, [state.isSyncing, invalidateAll]);
+  }, [isEnabled, state.isSyncing, invalidateAll]);
 
   // Start the timer
   const startTimer = useCallback(() => {
@@ -129,16 +138,14 @@ export function useAutoSync() {
         appStateRef.current.match(/inactive|background/) &&
         nextAppState === 'active'
       ) {
-        // App came to foreground
         console.log('[AutoSync] App returned to foreground');
-        if (state.isEnabled) {
+        if (isEnabled) {
           startTimer();
         }
       } else if (
         appStateRef.current === 'active' &&
         nextAppState.match(/inactive|background/)
       ) {
-        // App went to background
         console.log('[AutoSync] App went to background, pausing timer');
         stopTimer();
       }
@@ -149,31 +156,31 @@ export function useAutoSync() {
     return () => {
       subscription.remove();
     };
-  }, [state.isEnabled, startTimer, stopTimer]);
+  }, [isEnabled, startTimer, stopTimer]);
 
-  // Initialize timer on mount
+  // Start or stop timer whenever enabled state changes
   useEffect(() => {
-    if (state.isEnabled) {
+    if (isEnabled) {
       startTimer();
+    } else {
+      stopTimer();
     }
     
     return () => {
       stopTimer();
     };
-  }, [state.isEnabled, startTimer, stopTimer]);
+  }, [isEnabled, startTimer, stopTimer]);
 
-  // Toggle auto-sync
+  // Toggle auto-sync and persist the preference
   const toggleAutoSync = useCallback(() => {
-    setState(prev => {
-      const newEnabled = !prev.isEnabled;
-      if (newEnabled) {
-        startTimer();
-      } else {
-        stopTimer();
-      }
-      return { ...prev, isEnabled: newEnabled };
-    });
-  }, [startTimer, stopTimer]);
+    const newEnabled = !isEnabled;
+    setSyncEnabled(newEnabled ? 'true' : 'false');
+    if (newEnabled) {
+      startTimer();
+    } else {
+      stopTimer();
+    }
+  }, [isEnabled, setSyncEnabled, startTimer, stopTimer]);
 
   // Force an immediate sync (manual trigger)
   const syncNow = useCallback(() => {
@@ -182,6 +189,7 @@ export function useAutoSync() {
   }, [performSync]);
 
   return {
+    isEnabled,
     ...state,
     toggleAutoSync,
     syncNow,
